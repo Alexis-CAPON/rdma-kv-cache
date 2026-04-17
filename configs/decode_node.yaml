@@ -1,0 +1,21 @@
+node:
+  node_id: "decode-01"
+  role: "decode"
+  ip_address: "192.168.1.11"
+  tcp_port: 18516
+  rdma_port: 19516
+  vllm_port: 8200
+  gpu_id: 0
+
+orchestrator:
+  address: "192.168.1.1"
+  port: 9000
+
+rdma:
+  memory_pool_gb: 32
+  max_concurrent_transfers: 16
+  use_gpu_direct: true
+
+logging:
+  level: "info"
+  file: "/var/log/rdma-kv/decode-01.log"

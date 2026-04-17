@@ -1,0 +1,10 @@
+orchestrator:
+  host: "0.0.0.0"
+  port: 9000
+  routing_policy: "least_loaded" # or "round_robin"
+  health_check_interval_ms: 5000
+  request_timeout_ms: 30000
+
+logging:
+  level: "info" # debug, info, warn, error
+  file: "/var/log/rdma-kv/orchestrator.log"
