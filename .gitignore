@@ -34,7 +34,7 @@
 
 *.DS_Store
 
-.vscode
+.vscode/
 
 # Environment variables
 .env
