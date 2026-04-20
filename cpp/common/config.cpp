@@ -1,5 +1,7 @@
-#include "node/config.h"
+#include "cpp/common/config.h"
 #include <yaml-cpp/yaml.h>
+#include <vector>
+#include <string>
 
 uint64_t Config::generate_node_id(const std::string &host, uint16_t port)
 {
@@ -53,10 +55,56 @@ Config Config::fromFile(const std::string &path)
 
     config.monitoring_host = yaml["monitoring_host"].as<std::string>();
     config.monitoring_port = yaml["monitoring_port"].as<int>();
+    config.orchestrator_id = generate_node_id(config.monitoring_host, config.monitoring_port);
+
+    config.num_layers = yaml["num_layers"] ? yaml["num_layers"].as<uint32_t>() : 12;
 
     config.role = yaml["node"]["role"].as<std::string>();
 
-    config.vnodes_number = yaml["vnodes_number"].as<int>();
+    config.vnodes_number = yaml["vnodes_number"] ? yaml["vnodes_number"].as<int>() : 1;
+
+    // ── GPUDirect RDMA Configuration ─────────────────────────────────────────
+    if (yaml["node"])
+    {
+        const YAML::Node &node = yaml["node"];
+
+        // RDMA parameters
+        config.rdma.ib_port = node["ib_port"] ? node["ib_port"].as<int>() : 1;
+        config.rdma.gid_index = node["gid_index"] ? node["gid_index"].as<int>() : 0;
+        config.rdma.mtu = node["mtu"] ? node["mtu"].as<int>() : 4096;
+        config.rdma.sl = node["sl"] ? node["sl"].as<int>() : 0;
+        config.rdma.qp_max_send_wr = node["qp_max_send_wr"] ? node["qp_max_send_wr"].as<int>() : 64;
+        config.rdma.qp_max_recv_wr = node["qp_max_recv_wr"] ? node["qp_max_recv_wr"].as<int>() : 64;
+        config.rdma.qp_max_inline_data = node["qp_max_inline_data"] ? node["qp_max_inline_data"].as<int>() : 64;
+        config.rdma.max_rd_atomic = node["max_rd_atomic"] ? node["max_rd_atomic"].as<int>() : 16;
+        config.rdma.min_rnr_timer = node["min_rnr_timer"] ? node["min_rnr_timer"].as<int>() : 12;
+        config.rdma.timeout = node["timeout"] ? node["timeout"].as<int>() : 14;
+        config.rdma.retry_cnt = node["retry_cnt"] ? node["retry_cnt"].as<int>() : 7;
+        config.rdma.rnr_retry = node["rnr_retry"] ? node["rnr_retry"].as<int>() : 7;
+        config.rdma.cq_depth = node["cq_depth"] ? node["cq_depth"].as<int>() : 128;
+
+        // GPU configuration
+        config.gpu.enable_peer_access = node["enable_peer_access"] ? node["enable_peer_access"].as<bool>() : true;
+        config.gpu.require_same_numa = node["require_same_numa"] ? node["require_same_numa"].as<bool>() : false;
+    }
+
+    // Memory configuration (can be in a separate section or with defaults)
+    if (yaml["memory"])
+    {
+        const YAML::Node &mem = yaml["memory"];
+        config.memory.kv_buffer_mb = mem["kv_buffer_mb"] ? mem["kv_buffer_mb"].as<size_t>() : 1024;
+        config.memory.num_kv_chunks = mem["num_kv_chunks"] ? mem["num_kv_chunks"].as<int>() : 16;
+        config.memory.chunk_size_mb = mem["chunk_size_mb"] ? mem["chunk_size_mb"].as<size_t>() : 64;
+        config.memory.mr_relaxed_ordering = mem["mr_relaxed_ordering"] ? mem["mr_relaxed_ordering"].as<bool>() : true;
+        config.memory.max_concurrent_requests = mem["max_concurrent_requests"] ? mem["max_concurrent_requests"].as<int>() : 8;
+    }
+
+    // Orchestrator configuration
+    if (yaml["orchestrator"])
+    {
+        config.expected_decode_nodes = yaml["orchestrator"]["expected_decode_nodes"] ? yaml["orchestrator"]["expected_decode_nodes"].as<int>() : 1;
+        config.expected_prefill_nodes = yaml["orchestrator"]["expected_prefill_nodes"] ? yaml["orchestrator"]["expected_prefill_nodes"].as<int>() : 1;
+    }
 
     for (const auto &peer : yaml["peers"])
     {

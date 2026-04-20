@@ -10,6 +10,7 @@
 #include <vector>
 #include <mutex>
 #include <chrono>
+#include "cpp/apps/orchestrator/node_registry.h"
 
 /**
  * EpollWorker - Unified epoll-based I/O handler
@@ -28,7 +29,7 @@ class EpollWorker
 {
 public:
     EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server);
-    EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server);
+    EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server, NodeInfo &node_info);
     ~EpollWorker();
 
     // Non-copyable
@@ -51,11 +52,15 @@ public:
      */
     void enqueue_response(int fd, const Message &response);
 
-    /**
-     * Connect to coordinator (monitoring) node
-     * Should be called after start() to establish monitoring connection
-     */
-    bool connect_to_coordinator(const std::string &host, uint32_t port);
+    bool connect_to_orchestrator(const std::string &host, uint16_t port);
+    bool connect_to_peer(const std::string &host, uint16_t port);
+
+    bool send_node_info_to_orchestrator();
+
+    int get_orchestrator_fd() const
+    {
+        return orchestrator_fd_;
+    }
 
 private:
     // Configuration
@@ -65,8 +70,10 @@ private:
     EventQueue event_queue_;
     TCPServer &client_tcp_server_;
     TCPServer &server_tcp_server_;
+    NodeInfo &node_info_;
+    NodeRegistry &node_registry_;
 
-    int coordinator_fd_; // File descriptor for coordinator connection (if connected)
+    int orchestrator_fd_; // File descriptor for orchestrator connection (if connected)
 
     // Socket types
     enum SocketType
@@ -134,9 +141,6 @@ private:
      * Handle new server connection
      */
     void handle_server_accept();
-
-    // Establish connection to nodes
-    bool connect_to_node(const std::string &host, uint16_t port, uint64_t node_id);
 
     // ========== I/O Handlers ==========
 

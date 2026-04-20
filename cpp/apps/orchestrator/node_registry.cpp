@@ -54,6 +54,12 @@ void NodeRegistry::update_node_health(const std::string &node_id, bool is_health
 // Node Queries
 // ============================================================================
 
+int NodeRegistry::get_total_registered_nodes()
+{
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    return nodes_.size();
+}
+
 std::vector<NodeInfo> NodeRegistry::get_all_nodes() const
 {
     std::shared_lock<std::shared_mutex> lock(mutex_);
@@ -150,4 +156,29 @@ size_t NodeRegistry::get_healthy_node_count(NodeRole role) const
     }
 
     return count;
+}
+
+void NodeRegistry::add_node_fd(const std::string &node_id, int fd)
+{
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    nodes_fd_[node_id] = fd;
+}
+
+void NodeRegistry::remove_node_fd(const std::string &node_id)
+{
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    nodes_fd_.erase(node_id);
+}
+
+std::optional<int> NodeRegistry::get_node_fd(const std::string &node_id) const
+{
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+
+    auto it = nodes_fd_.find(node_id);
+    if (it != nodes_fd_.end())
+    {
+        return it->second;
+    }
+
+    return std::nullopt;
 }

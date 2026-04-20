@@ -1,105 +1,133 @@
 #!/bin/bash
 
-# Smart stop script - stops all RHT nodes on CloudLab
+# ============================================
+# Smart Stop - Stop Disaggregated LLM System
+# ============================================
+# Stops orchestrator, prefill nodes, decode nodes, and vLLM instances
 
-source deploy_config.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/deploy_config.sh"
 
-if [ ! -f "$SELECTED_SERVERS_FILE" ]; then
-    log_error "No servers selected. Run ./smart_deploy.sh first."
-    exit 1
-fi
-
-SELECTED_NODES=($(cat "$SELECTED_SERVERS_FILE"))
-NUM_NODES=${#SELECTED_NODES[@]}
-
-# Determine coordinator node
-COORDINATOR_NODE="${CLOUDLAB_NODES[$NUM_NODES]}"
-COORDINATOR_FULL_HOST=$(get_full_hostname "$COORDINATOR_NODE")
-
-echo "=========================================="
-echo "Stopping RHT Fault-Tolerant Cluster"
-echo "=========================================="
-echo "RHT Nodes: $NUM_NODES"
-echo "Coordinator: $COORDINATOR_FULL_HOST"
+log_info "=========================================="
+log_info "Stopping Disaggregated LLM Inference System"
+log_info "=========================================="
 echo ""
 
-# Stop coordinator first
-log_info "Stopping coordinator on $COORDINATOR_FULL_HOST..."
+# ============================================
+# Get node list from CloudLab
+# ============================================
 
-# Kill all processes for user (except SSH)
-ssh "${SSH_OPTS[@]}" "${USERNAME}@${COORDINATOR_FULL_HOST}" \
-    "pkill -u ${USERNAME} -9 2>/dev/null; killall -u ${USERNAME} -9 2>/dev/null; echo 'Coordinator stopped'" &
+ALL_NODES=("${CLOUDLAB_NODES[@]}")
 
-COORD_STOP_PID=$!
+log_info "Stopping all processes on ${#ALL_NODES[@]} nodes..."
+echo ""
 
-# Stop all RHT nodes in parallel
+# ============================================
+# Stop all processes on all nodes
+# ============================================
+
 STOP_PIDS=()
-for i in $(seq 0 $((NUM_NODES - 1))); do
-    NODE="${SELECTED_NODES[$i]}"
-    FULL_HOST=$(get_full_hostname "$NODE")
 
-    echo "Stopping node $i on $FULL_HOST..."
+for NODE in "${ALL_NODES[@]}"; do
+    HOST=$(get_full_hostname "$NODE")
 
-    # Kill all processes for user Alexis (except SSH)
-    ssh "${SSH_OPTS[@]}" "${USERNAME}@${FULL_HOST}" \
-        "pkill -u ${USERNAME} -9 2>/dev/null; killall -u ${USERNAME} -9 2>/dev/null; echo 'Stopped'" &
+    log_info "Stopping processes on ${HOST}..."
+
+    # Kill all related processes:
+    # - orchestrator
+    # - prefill_node
+    # - decode_node
+    # - vllm python processes
+    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pkill -f 'orchestrator --config' 2>/dev/null; \
+         pkill -f 'prefill_node --config' 2>/dev/null; \
+         pkill -f 'decode_node --config' 2>/dev/null; \
+         pkill -f 'vllm.entrypoints.openai.api_server' 2>/dev/null; \
+         echo 'Stopped'" &
 
     STOP_PIDS+=($!)
 done
 
-# Wait for all to complete
-wait $COORD_STOP_PID
-wait
+# Wait for all stop commands to complete
+for pid in "${STOP_PIDS[@]}"; do
+    wait $pid 2>/dev/null
+done
 
-# Verify nodes are stopped
 echo ""
-log_info "Verifying cluster is stopped..."
+log_info "Waiting for processes to terminate..."
+sleep 3
+echo ""
+
+# ============================================
+# Verify all processes are stopped
+# ============================================
+
+log_info "Verifying all processes are stopped..."
 echo ""
 
 ALL_STOPPED=true
 
-# Check coordinator
-COORD_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${COORDINATOR_FULL_HOST}" \
-    "ps aux | grep -E '[r]ht_coordinator.*--config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+for NODE in "${ALL_NODES[@]}"; do
+    HOST=$(get_full_hostname "$NODE")
 
-if [ "$COORD_RUNNING" == "no" ]; then
-    log_success "Coordinator ($COORDINATOR_NODE) is STOPPED"
-else
-    log_error "Coordinator ($COORDINATOR_NODE) is STILL RUNNING"
-    ALL_STOPPED=false
-fi
+    # Check for any remaining processes
+    ORCH_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pgrep -f 'orchestrator --config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
 
-# Check RHT nodes and benchmark clients
-for i in $(seq 0 $((NUM_NODES - 1))); do
-    NODE="${SELECTED_NODES[$i]}"
-    FULL_HOST=$(get_full_hostname "$NODE")
+    PREFILL_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pgrep -f 'prefill_node --config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
 
-    # Check if rht_node is still running
-    NODE_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${FULL_HOST}" \
-        "ps aux | grep -E '[r]ht_node.*--config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+    DECODE_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pgrep -f 'decode_node --config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
 
-    # Check if benchmark client is still running
-    CLIENT_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${FULL_HOST}" \
-        "ps aux | grep -E '[r]ht_benchmark' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+    VLLM_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pgrep -f 'vllm.entrypoints.openai.api_server' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
 
-    if [ "$NODE_RUNNING" == "no" ] && [ "$CLIENT_RUNNING" == "no" ]; then
-        log_success "Node $i ($NODE) is STOPPED (server + client)"
+    if [ "$ORCH_RUNNING" == "no" ] && [ "$PREFILL_RUNNING" == "no" ] && \
+       [ "$DECODE_RUNNING" == "no" ] && [ "$VLLM_RUNNING" == "no" ]; then
+        log_success "${HOST}: All processes stopped"
     else
-        if [ "$NODE_RUNNING" != "no" ]; then
-            log_error "Node $i ($NODE) server is STILL RUNNING"
-            ALL_STOPPED=false
-        fi
-        if [ "$CLIENT_RUNNING" != "no" ]; then
-            log_error "Node $i ($NODE) client is STILL RUNNING"
-            ALL_STOPPED=false
-        fi
+        RUNNING_PROCS=""
+        [ "$ORCH_RUNNING" == "yes" ] && RUNNING_PROCS+="orchestrator "
+        [ "$PREFILL_RUNNING" == "yes" ] && RUNNING_PROCS+="prefill_node "
+        [ "$DECODE_RUNNING" == "yes" ] && RUNNING_PROCS+="decode_node "
+        [ "$VLLM_RUNNING" == "yes" ] && RUNNING_PROCS+="vllm "
+        log_error "${HOST}: Still running: ${RUNNING_PROCS}"
+        ALL_STOPPED=false
     fi
 done
 
 echo ""
 
+# ============================================
+# Final Status
+# ============================================
+
 if [ "$ALL_STOPPED" = true ]; then
-    log_success "All nodes and coordinator stopped successfully!"
+    log_success "All components stopped successfully!"
 else
-    log_warning "Some nodes are still running. Try running this script again."
+    log_warning "Some processes are still running."
+    log_info "Force kill all user processes? (y/n)"
+    read -r FORCE_KILL
+
+    if [ "$FORCE_KILL" == "y" ]; then
+        log_info "Force killing all processes..."
+
+        for NODE in "${ALL_NODES[@]}"; do
+            HOST=$(get_full_hostname "$NODE")
+            ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+                "pkill -9 -f 'orchestrator' 2>/dev/null; \
+                 pkill -9 -f 'prefill_node' 2>/dev/null; \
+                 pkill -9 -f 'decode_node' 2>/dev/null; \
+                 pkill -9 -f 'vllm' 2>/dev/null" &
+        done
+
+        wait
+        sleep 2
+        log_success "Force kill completed"
+    fi
 fi
+
+echo ""
+log_info "Logs are preserved in ${REMOTE_DIR}/logs/ on each node"
+echo ""

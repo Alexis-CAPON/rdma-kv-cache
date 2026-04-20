@@ -17,7 +17,7 @@ Node::Node(Config config)
       state_(State::STARTING),
       server_tcp_server_(),
       event_queue_(config.orchestrator_event_queue_size),
-      epoll_worker_(event_queue_, server_tcp_server_),
+      epoll_worker_(event_queue_, server_tcp_server_, node_info_),
       worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id),
       node_info_(),
       rdma_engine_(config_, node_info_)
@@ -53,6 +53,8 @@ bool Node::start()
         return false;
     }
 
+    node_info_.node_listen_socket_fd = server_tcp_server_.get_fd();
+
     // ========================================
     // 2. Start EpollWorker (I/O Thread)
     // ========================================
@@ -67,22 +69,50 @@ bool Node::start()
     worker_pool_.start();
     Logger::info("WorkerPool started with " + std::to_string(config_.worker_pool_size) + " workers");
 
-    // Initialize RDMA GPU Direct
-
-    rdma_engine_.initialize();
-
     // ========================================
-    // 4. Set State
+    // 4. Initialize RDMA GPUDirect
     // ========================================
 
-    state_.store(State::QP_EXCHANGING);
+    Logger::info("Initializing RDMA GPUDirect...");
+    if (!rdma_engine_.initialize())
+    {
+        Logger::error("Failed to initialize RDMA engine");
+        epoll_worker_.stop();
+        worker_pool_.stop();
+        return false;
+    }
+    Logger::info("RDMA GPUDirect initialized successfully");
+
+    // ==========================================
+    // 5. Connect to Orchestrator Node and send RDMA Data
+    // ==========================================
+
+    Logger::info("Connecting to orchestrator...");
+    if (!epoll_worker_.connect_to_orchestrator(config_.orchestrator_host, config_.orchestrator_port))
+    {
+        Logger::error("Failed to connect to orchestrator");
+        return false;
+    }
+
+    if (!epoll_worker_.send_node_info_to_orchestrator())
+    {
+        Logger::error("Failed to send NodeInfo to orchestrator");
+        return false;
+    }
+
+    // ========================================
+    // 5. Set State
+    // ========================================
+
+    state_.store(State::WAITING_FOR_ORCHESTRATOR_BROADCAST);
     running_ = true;
 
     Logger::info("========================================");
-    Logger::info("Orchestrator ONLINE");
-    Logger::info("State: WAITING_FOR_NODES");
-    Logger::info("Client port: " + std::to_string(config_.client_socket_port));
+    Logger::info("Node ONLINE (" + config_.role + ")");
+    Logger::info("State: WAITING_FOR_ORCHESTRATOR_BROADCAST");
     Logger::info("Server port: " + std::to_string(config_.server_socket_port));
+    Logger::info("GPU: " + node_info_.gpu_name + " (GPU" + std::to_string(node_info_.gpu_id) + ")");
+    Logger::info("IB Device: " + node_info_.ib_dev_name + " port " + std::to_string(node_info_.ib_port));
     Logger::info("========================================");
 
     return true;
@@ -92,19 +122,22 @@ void Node::shutdown()
 {
     if (!running_)
     {
-        Logger::warning("Orchestrator already stopped");
+        Logger::warning("Node already stopped");
         return;
     }
 
-    Logger::info("Shutting down Orchestrator...");
+    Logger::info("Shutting down Node...");
 
     // Update state
     state_.store(State::STOPPED);
 
     // Stop accepting new connections
     Logger::info("Stopping TCP servers...");
-    client_tcp_server_.close();
     server_tcp_server_.close();
+
+    // Shutdown RDMA
+    Logger::info("Shutting down RDMA...");
+    rdma_engine_.shutdown();
 
     // Stop event loop (no more I/O)
     Logger::info("Stopping EpollWorker...");
@@ -116,29 +149,7 @@ void Node::shutdown()
 
     running_ = false;
 
-    // Print final statistics
-    auto stats = rdma_exchange_tracker_.get_stats();
     Logger::info("========================================");
-    Logger::info("Orchestrator Shutdown Complete");
-    Logger::info("Cluster stats:");
-    Logger::info("  Registered prefill nodes: " + std::to_string(stats.registered_prefill_nodes) +
-                 "/" + std::to_string(stats.expected_prefill_nodes));
-    Logger::info("  Registered decode nodes: " + std::to_string(stats.registered_decode_nodes) +
-                 "/" + std::to_string(stats.expected_decode_nodes));
-    Logger::info("  Ready nodes: " + std::to_string(stats.ready_nodes));
-    Logger::info("  Topology validated: " + std::string(stats.topology_validated ? "Yes" : "No"));
-    Logger::info("  Cluster operational: " + std::string(stats.cluster_operational ? "Yes" : "No"));
-
-    auto req_stats = request_tracker_.get_stats();
-    Logger::info("Request stats:");
-    Logger::info("  Total requests: " + std::to_string(req_stats.total_requests));
-    Logger::info("  Completed: " + std::to_string(req_stats.completed_requests));
-    Logger::info("  Failed: " + std::to_string(req_stats.failed_requests));
-    if (req_stats.completed_requests > 0)
-    {
-        Logger::info("  Avg total latency: " + std::to_string(req_stats.avg_total_latency_ms) + " ms");
-        Logger::info("  Avg prefill latency: " + std::to_string(req_stats.avg_prefill_latency_ms) + " ms");
-        Logger::info("  Avg decode latency: " + std::to_string(req_stats.avg_decode_latency_ms) + " ms");
-    }
+    Logger::info("Node Shutdown Complete (" + config_.role + ")");
     Logger::info("========================================");
 }

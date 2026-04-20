@@ -1,5 +1,4 @@
 #pragma once
-
 #include <string>
 #include <thread>
 #include <atomic>
@@ -84,12 +83,12 @@ public:
     /**
      * Get current orchestrator state
      */
-    State get_state() const { return state_.load(); }
+    static State get_state() { return state_.load(); }
 
     /**
      * Set orchestrator state
      */
-    void set_state(State state) { state_.store(state); }
+    static void set_state(State state) { state_.store(state); }
 
     // ========================================
     // Accessors (for debugging/monitoring)
@@ -119,6 +118,6 @@ private:
 
     NodeRegistry node_registry_;
     RequestRouter request_router_;
-    RequestTracker request_tracker_;
+    RequestTrackerOrchestrator request_tracker_;
     RdmaExchangeTracker rdma_exchange_tracker_;
 };

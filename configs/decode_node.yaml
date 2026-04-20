@@ -1,21 +1,61 @@
 node:
+  # ── Node identity ─────────────────────────────────────────────────────────────
   node_id: "decode-01"
   role: "decode"
   ip_address: "192.168.1.11"
   tcp_port: 18516
-  rdma_port: 19516
   vllm_port: 8200
-  gpu_id: 0
 
+  # ── InfiniBand / RDMA fabric ──────────────────────────────────────────────────
+  ib_port: 1 # Physical IB port (usually 1)
+  gid_index: 0 # 0=IB, 3=RoCEv2
+  mtu: 4096 # Path MTU: 512/1024/2048/4096
+  sl: 0 # Service Level
+
+  # ── QP Tuning ─────────────────────────────────────────────────────────────────
+  qp_max_send_wr: 64
+  qp_max_recv_wr: 64
+  qp_max_inline_data: 64
+  max_rd_atomic: 16
+  min_rnr_timer: 12 # ~0.64 ms
+  timeout: 14 # local ACK timeout (~67 ms)
+  retry_cnt: 7
+  rnr_retry: 7 # 7 = infinite
+
+  num_layers: 12 # Number of transformer layers (for calculating KV chunking)
+
+  # ── Completion Queue ──────────────────────────────────────────────────────────
+  cq_depth: 128
+
+  # ── GPU selection ─────────────────────────────────────────────────────────────
+  enable_peer_access: true # Enable P2P between GPUs
+  require_same_numa: false # Require GPU and HCA on same NUMA node
+
+# ── Memory Configuration ──────────────────────────────────────────────────────
+memory:
+  kv_buffer_mb: 16384 # Total GPU memory buffer (16 GB)
+  chunk_size_mb: 64 # Size of each chunk (64-128 MB recommended)
+  num_kv_chunks: 32 # Number of chunks per request (calculated)
+  mr_relaxed_ordering: true # Enable PCIe relaxed ordering for better BW
+  max_concurrent_requests: 8 # Max simultaneous KV transfers
+
+# ── Worker Pool ───────────────────────────────────────────────────────────────
+worker_pool_size: 1
+
+# ── Peer Nodes ────────────────────────────────────────────────────────────────
+peer_nodes:
+  - node_id: "prefill-01"
+    role: "prefill"
+    ip_address: "192.168.1.12"
+
+# ── Orchestrator ──────────────────────────────────────────────────────────────
 orchestrator:
   address: "192.168.1.1"
   port: 9000
+  expected_decode_nodes: 1
+  expected_prefill_nodes: 1
 
-rdma:
-  memory_pool_gb: 32
-  max_concurrent_transfers: 16
-  use_gpu_direct: true
-
+# ── Logging ───────────────────────────────────────────────────────────────────
 logging:
   level: "info"
   file: "/var/log/rdma-kv/decode-01.log"

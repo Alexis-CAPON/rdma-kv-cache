@@ -12,6 +12,7 @@
 #include "cpp/network/tcp_server.h"
 #include "cpp/rdma/rdma_engine.h"
 #include "cpp/common/types.h"
+#include "cpp/nodes/request_tracker.h"
 
 class Node
 {
@@ -28,16 +29,17 @@ public:
     // ========================================
 
     /**
-     * Start orchestrator services
+     * Start node services
      * 1. Bind and listen on both TCP servers
      * 2. Start EpollWorker I/O thread
      * 3. Start WorkerPool threads
-     * 4. Transition to WAITING_FOR_NODES state
+     * 4. Connect to orchestrator and send NodeInfo
+     * 5. Transition to WAITING_FOR_ORCHESTRATOR_BROADCAST state
      */
     bool start();
 
     /**
-     * Shutdown orchestrator gracefully
+     * Shutdown node gracefully
      * 1. Stop accepting new requests
      * 2. Stop EpollWorker
      * 3. Stop WorkerPool (let workers finish current tasks)
@@ -46,7 +48,7 @@ public:
     void shutdown();
 
     /**
-     * Check if orchestrator is running
+     * Check if node is running
      */
     bool is_running() const { return running_; }
 
@@ -56,22 +58,21 @@ public:
 
     enum class State
     {
-        STARTING,          // Initial state
-        QP_EXCHANGING,     // Broadcasting QP maps to nodes
-        WAITING_FOR_READY, // Waiting for RDMA_READY from all nodes
-        RUNNING,           // Accepting client requests
+        STARTING,                           // Initial state
+        WAITING_FOR_ORCHESTRATOR_BROADCAST, // Waiting for orchestrator broadcast
+        RUNNING,
         STOPPED
     };
 
     /**
-     * Get current orchestrator state
+     * Get current node state
      */
-    State get_state() const { return state_.load(); }
+    static State get_state() { return state_.load(); }
 
     /**
-     * Set orchestrator state
+     * Set node state
      */
-    void set_state(State state) { state_.store(state); }
+    static void set_state(State state) { state_.store(state); }
 
     // ========================================
     // Accessors (for debugging/monitoring)
@@ -90,7 +91,7 @@ private:
 
     // State
     std::atomic<bool> running_;
-    std::atomic<State> state_;
+    static std::atomic<State> state_;
 
     TCPServer server_tcp_server_; // For prefill/decode node connections (port from config.server_socket_port)
 

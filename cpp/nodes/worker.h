@@ -10,16 +10,36 @@
 #include "cpp/common/messages.h"
 #include "cpp/common/types.h"
 #include "cpp/nodes/epoll_worker.h"
+#include "cpp/apps/orchestrator/node_registry.h"
+#include "cpp/apps/orchestrator/rdma_exchange_tracker.h"
+#include "cpp/rdma/rdma_engine.h"
+#include "cpp/apps/orchestrator/request_tracker.h"
+#include "cpp/apps/orchestrator/request_router.h"
 
 class Worker
 {
 public:
+    // Instance for prefill/decode nodes
     Worker(
         uint32_t worker_id,
         EpollWorker &epoll_worker,
         const Config &config,
         uint64_t node_id,
-        std::atomic<uint64_t> *server_ops_counter = nullptr);
+        std::atomic<uint64_t> *server_ops_counter = nullptr,
+        NodeInfo &node_info,
+        RDMAEngine &rdma_engine);
+
+    // Instance for Orchestrator
+    Worker(
+        uint32_t worker_id,
+        EpollWorker &epoll_worker,
+        const Config &config,
+        uint64_t node_id,
+        std::atomic<uint64_t> *server_ops_counter = nullptr,
+        NodeRegistry &node_registry,
+        RdmaExchangeTracker &rdma_exchange_tracker,
+        RequestTrackerOrchestrator &request_tracker_orchestrator,
+        RequestRouter &request_router);
 
     ~Worker();
 
@@ -36,6 +56,14 @@ private:
 
     EpollWorker &epoll_worker_;
     Config config_;
+
+    NodeInfo &node_info_;     // only used by prefill/decode workers
+    RDMAEngine &rdma_engine_; // only used by prefill/decode workers
+
+    NodeRegistry &node_registry_;                             // Only used by orchestrator worker
+    RdmaExchangeTracker rdma_exchange_tracker_;               // Only used by orchestrator worker
+    RequestTrackerOrchestrator request_tracker_orchestrator_; // Only used by orchestrator worker
+    RequestRouter request_router_;                            // Only used by orchestrator worker
 
     // Shared server-side operation counter (for throughput tracking)
     std::atomic<uint64_t> *server_ops_counter_;
@@ -55,6 +83,8 @@ private:
     void handle_assign_request(int server_fd, Message *msg);
     void handle_process_rdma_registration(int server_fd, Message *msg);
     void handle_ready(int server_fd, Message *msg);
+    void handle_prefill_complete_orchestrator(int server_fd, Message *msg);
+    void handle_decode_complete(int server_fd, Message *msg);
 
     // Only prefill / decode nodes
     void handle_node_rdma_registration_complete(int server_fd, Message *msg);
@@ -63,10 +93,9 @@ private:
 
     // Only prefill nodes
     void handle_transfer_ready(int server_fd, Message *msg);
-    void handle_prefill_complete(int server_fd, Message *msg);
 
     // Only decode nodes
-    void handle_decode_complete(int server_fd, Message *msg);
+    void handle_prefill_complete(int server_fd, Message *msg);
 
     // ========================================
     // Response Handling

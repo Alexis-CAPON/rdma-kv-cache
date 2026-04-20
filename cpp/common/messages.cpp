@@ -1,7 +1,5 @@
-
-#include "common/messages.h"
-
-#include "common/logger.h"
+#include "cpp/common/messages.h"
+#include "cpp/common/logger.h"
 #include <cstring>
 #include <cstdint>
 #include <arpa/inet.h> // for htonl/ntohl
@@ -145,136 +143,51 @@ bool read_string_vector(const uint8_t *&ptr, const uint8_t *end, std::vector<std
 }
 
 // Factory methods
-Message Message::create_get(const std::string &key)
+Message Message::create_rdma_process_registration(std::string source_node_id, NodeInfo node_info)
 {
     Message msg;
-    msg.type = MessageType::GET_REQUEST;
-    msg.key = key;
+    msg.type = MessageType::RDMA_PROCESS_REGISTRATION;
+    msg.source_node_id = source_node_id;
+    msg.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    msg.node_info = node_info;
     return msg;
 }
 
-Message Message::create_put(const std::string &key, const std::string &value)
+Message Message::create_broadcast_member_info(std::string source_node_id, std::vector<NodeInfo> membership_list_info)
 {
     Message msg;
-    msg.type = MessageType::PUT_REQUEST;
-    msg.key = key;
-    msg.value = value;
+    msg.type = MessageType::BROADCAST_MEMBER_INFO;
+    msg.source_node_id = source_node_id;
+    msg.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    msg.membership_list_info = membership_list_info;
     return msg;
 }
 
-Message Message::create_delete(const std::string &key)
+Message Message::create_rdma_ready(std::string source_node_id)
 {
     Message msg;
-    msg.type = MessageType::PUT_REQUEST; // Using PUT_REQUEST for delete (no DELETE type exists)
-    msg.key = key;
-    msg.value = ""; // Empty value indicates delete
+    msg.type = MessageType::RDMA_READY;
+    msg.source_node_id = source_node_id;
+    msg.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     return msg;
 }
 
-Message Message::create_get_response(const std::string &value)
+Message Message::create_assign_request(std::string source_node_id, const RequestInfo &request_info)
 {
     Message msg;
-    msg.type = MessageType::GET_RESPONSE;
-    msg.status = StatusCode::SUCCESS;
-    msg.value = value;
-    return msg;
-}
-
-Message Message::create_put_response(StatusCode status)
-{
-    Message msg;
-    msg.type = MessageType::PUT_RESPONSE;
-    msg.status = status;
-    return msg;
-}
-
-Message Message::create_multi_put_response(StatusCode status)
-{
-    Message msg;
-    msg.type = MessageType::MULTI_PUT_RESPONSE;
-    msg.status = status;
-    return msg;
-}
-
-Message Message::create_delete_response(StatusCode status)
-{
-    Message msg;
-    msg.type = MessageType::PUT_RESPONSE; // Using PUT_RESPONSE for delete response
-    msg.status = status;
+    msg.type = MessageType::ASSIGN_REQUEST;
+    msg.source_node_id = source_node_id;
+    msg.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    msg.request_info = request_info;
     return msg;
 }
 
 Message Message::create_error(const std::string &error_msg)
 {
     Message msg;
-    msg.type = MessageType::ERROR;
-    msg.status = StatusCode::INTERNAL_ERROR;
+    msg.type = MessageType::CLIENT_ERROR;
     msg.error_message = error_msg;
-    return msg;
-}
-
-Message Message::create_node_join(uint64_t node_id, const std::string &address, uint64_t epoch)
-{
-    Message msg;
-    msg.type = MessageType::MEMBERSHIP_NODE_JOIN;
-    msg.node_id = node_id;
-    msg.node_address = address;
-    msg.membership_epoch = epoch;
-    return msg;
-}
-
-Message Message::create_node_leave(uint64_t node_id, uint64_t epoch)
-{
-    Message msg;
-    msg.type = MessageType::MEMBERSHIP_NODE_LEAVE;
-    msg.node_id = node_id;
-    msg.membership_epoch = epoch;
-    return msg;
-}
-
-Message Message::create_node_failed(uint64_t node_id, uint64_t epoch)
-{
-    Message msg;
-    msg.type = MessageType::MEMBERSHIP_NODE_FAILED;
-    msg.node_id = node_id;
-    msg.membership_epoch = epoch;
-    return msg;
-}
-
-Message Message::create_node_recovery(uint64_t node_id, uint64_t epoch)
-{
-    Message msg;
-    msg.type = MessageType::MEMBERSHIP_NODE_RECOVERY;
-    msg.node_id = node_id;
-    msg.membership_epoch = epoch;
-    return msg;
-}
-
-Message Message::create_membership_snapshot(
-    const std::vector<std::pair<uint64_t, std::string>> &nodes, uint64_t epoch)
-{
-    Message msg;
-    msg.type = MessageType::MEMBERSHIP_SNAPSHOT;
-    msg.membership_epoch = epoch;
-
-    // Serialize nodes: "id1:addr1,id2:addr2,..."
-    std::string list;
-    for (size_t i = 0; i < nodes.size(); i++)
-    {
-        if (i > 0)
-            list += ",";
-        list += std::to_string(nodes[i].first) + ":" + nodes[i].second;
-    }
-    msg.membership_list = list;
-
-    return msg;
-}
-
-Message Message::create_heartbeat(uint64_t node_id)
-{
-    Message msg;
-    msg.type = MessageType::HEARTBEAT;
-    msg.node_id = node_id;
+    msg.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     return msg;
 }
 
@@ -327,20 +240,20 @@ std::vector<uint8_t> serialize_message(const Message &message)
     write_string(buffer, message.membership_list);
 
     // Write RDMA info (struct fields)
-    write_uint32(buffer, message.rdma_info.qp_num);           // 4 bytes
-    buffer.push_back(static_cast<uint8_t>(message.rdma_info.lid >> 8));   // 2 bytes (high byte)
-    buffer.push_back(static_cast<uint8_t>(message.rdma_info.lid & 0xFF)); // (low byte)
-    buffer.insert(buffer.end(), message.rdma_info.gid, message.rdma_info.gid + 16);  // 16 bytes
-    write_uint64(buffer, message.rdma_info.memory_base_addr); // 8 bytes
-    write_uint32(buffer, message.rdma_info.rkey);             // 4 bytes
-    write_uint64(buffer, message.rdma_info.memory_size);      // 8 bytes
+    write_uint32(buffer, message.rdma_info.qp_num);                                 // 4 bytes
+    buffer.push_back(static_cast<uint8_t>(message.rdma_info.lid >> 8));             // 2 bytes (high byte)
+    buffer.push_back(static_cast<uint8_t>(message.rdma_info.lid & 0xFF));           // (low byte)
+    buffer.insert(buffer.end(), message.rdma_info.gid, message.rdma_info.gid + 16); // 16 bytes
+    write_uint64(buffer, message.rdma_info.memory_base_addr);                       // 8 bytes
+    write_uint32(buffer, message.rdma_info.rkey);                                   // 4 bytes
+    write_uint64(buffer, message.rdma_info.memory_size);                            // 8 bytes
 
     // Write QP map (count + entries)
     write_uint32(buffer, static_cast<uint32_t>(message.qp_map.size()));
     for (const auto &[node_id, qp_num] : message.qp_map)
     {
-        write_uint64(buffer, node_id);  // 8 bytes
-        write_uint32(buffer, qp_num);   // 4 bytes
+        write_uint64(buffer, node_id); // 8 bytes
+        write_uint32(buffer, qp_num);  // 4 bytes
     }
 
     return buffer;

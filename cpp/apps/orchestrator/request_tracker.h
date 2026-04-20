@@ -15,15 +15,15 @@
  * - Timing information
  * - Response/error data
  */
-class RequestTracker
+class RequestTrackerOrchestrator
 {
 public:
-    RequestTracker() = default;
-    ~RequestTracker() = default;
+    RequestTrackerOrchestrator() = default;
+    ~RequestTrackerOrchestrator() = default;
 
     // Non-copyable
-    RequestTracker(const RequestTracker &) = delete;
-    RequestTracker &operator=(const RequestTracker &) = delete;
+    RequestTrackerOrchestrator(const RequestTrackerOrchestrator &) = delete;
+    RequestTrackerOrchestrator &operator=(const RequestTrackerOrchestrator &) = delete;
 
     // ========================================
     // Request Lifecycle

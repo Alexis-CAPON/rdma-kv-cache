@@ -1,127 +1,232 @@
 #!/bin/bash
 
-# Smart run script - starts all RHT nodes on CloudLab
+# ============================================
+# Smart Run - Start Disaggregated LLM System
+# ============================================
+# Starts orchestrator, prefill nodes, decode nodes, and vLLM instances
 
-source deploy_config.sh
+set -e
 
-if [ ! -f "$SELECTED_SERVERS_FILE" ]; then
-    log_error "No servers selected. Run ./smart_deploy.sh first."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/deploy_config.sh"
+
+# ============================================
+# Configuration
+# ============================================
+
+# Default: 1 orchestrator, 2 prefill, 2 decode
+NUM_PREFILL_NODES=${1:-2}
+NUM_DECODE_NODES=${2:-2}
+
+# Validate we have enough nodes
+TOTAL_NODES=$((1 + NUM_PREFILL_NODES + NUM_DECODE_NODES))
+if [ $TOTAL_NODES -gt ${#CLOUDLAB_NODES[@]} ]; then
+    log_error "Not enough CloudLab nodes. Need $TOTAL_NODES, have ${#CLOUDLAB_NODES[@]}"
     exit 1
 fi
 
-SELECTED_NODES=($(cat "$SELECTED_SERVERS_FILE"))
-NUM_NODES=${#SELECTED_NODES[@]}
+# Assign nodes
+ORCHESTRATOR_NODE="${CLOUDLAB_NODES[0]}"
+PREFILL_NODES=("${CLOUDLAB_NODES[@]:1:$NUM_PREFILL_NODES}")
+DECODE_NODES=("${CLOUDLAB_NODES[@]:$((1+NUM_PREFILL_NODES)):$NUM_DECODE_NODES}")
 
-# Determine coordinator node (same logic as deploy script)
-MAX_RHT_NODES=$((${#CLOUDLAB_NODES[@]} - 1))
-COORDINATOR_NODE="${CLOUDLAB_NODES[$NUM_NODES]}"
-COORDINATOR_FULL_HOST=$(get_full_hostname "$COORDINATOR_NODE")
-
-echo "=========================================="
-echo "Starting RHT Fault-Tolerant Cluster"
-echo "=========================================="
-echo "RHT Nodes: $NUM_NODES"
-echo "Coordinator: $COORDINATOR_FULL_HOST"
+log_info "=========================================="
+log_info "Starting Disaggregated LLM Inference System"
+log_info "=========================================="
+echo ""
+log_info "Orchestrator: ${ORCHESTRATOR_NODE}"
+log_info "Prefill nodes: ${PREFILL_NODES[@]}"
+log_info "Decode nodes: ${DECODE_NODES[@]}"
 echo ""
 
-# Start coordinator FIRST (so it's listening when nodes try to connect)
-log_info "Starting coordinator on $COORDINATOR_FULL_HOST..."
-COORDINATOR_CONFIG="${COORDINATOR_NODE}.yaml"
+# ============================================
+# Step 1: Start Orchestrator
+# ============================================
 
-ssh "${SSH_OPTS[@]}" "${USERNAME}@${COORDINATOR_FULL_HOST}" \
-    "cd ${REMOTE_DIR} && mkdir -p logs && bash -c 'nohup ./build/rht_coordinator --config config/${COORDINATOR_CONFIG} > logs/${COORDINATOR_NODE}.log 2>&1 < /dev/null &' && sleep 0.5 && pgrep -f rht_coordinator"
+log_step "Starting orchestrator..."
 
-if [ $? -eq 0 ]; then
-    log_success "Coordinator started on $COORDINATOR_FULL_HOST"
+ORCHESTRATOR_HOST=$(get_full_hostname "$ORCHESTRATOR_NODE")
+
+ssh "${SSH_OPTS[@]}" "${USERNAME}@${ORCHESTRATOR_HOST}" \
+    "cd ${REMOTE_DIR} && mkdir -p logs && \
+    nohup ./build/bin/orchestrator --config configs/orchestrator.yaml \
+    > logs/orchestrator.log 2>&1 < /dev/null &"
+
+sleep 2
+
+# Verify orchestrator started
+ORCH_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${ORCHESTRATOR_HOST}" \
+    "pgrep -f 'orchestrator --config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+
+if [ "$ORCH_RUNNING" == "yes" ]; then
+    log_success "Orchestrator started on ${ORCHESTRATOR_HOST}"
 else
-    log_error "Failed to start coordinator"
+    log_error "Failed to start orchestrator"
     exit 1
 fi
 
-# Give coordinator time to initialize and start listening
-echo ""
-log_info "Waiting for coordinator to be ready..."
-sleep 3
 echo ""
 
-# Now start all RHT nodes (they will connect to the running coordinator)
-log_info "Starting RHT nodes..."
-START_PIDS=()
-for i in $(seq 0 $((NUM_NODES - 1))); do
-    NODE="${SELECTED_NODES[$i]}"
-    FULL_HOST=$(get_full_hostname "$NODE")
-    CONFIG_FILE="${NODE}.yaml"
+# ============================================
+# Step 2: Start Prefill Nodes (vLLM + C++ node)
+# ============================================
 
-    echo "Starting node $i on $FULL_HOST..."
+log_step "Starting prefill nodes..."
 
-    # Start node in background on remote server with proper detachment
-    ssh "${SSH_OPTS[@]}" "${USERNAME}@${FULL_HOST}" \
-        "cd ${REMOTE_DIR} && mkdir -p logs && bash -c 'nohup ./build/rht_node --config config/${CONFIG_FILE} > logs/${NODE}.log 2>&1 < /dev/null &' && echo 'started'" > /dev/null 2>&1 &
+for i in "${!PREFILL_NODES[@]}"; do
+    NODE="${PREFILL_NODES[$i]}"
+    HOST=$(get_full_hostname "$NODE")
+    NODE_ID="prefill-$(printf '%02d' $i)"
+    VLLM_PORT=$((VLLM_PREFILL_BASE_PORT + i))
+    NODE_TCP_PORT=$((NODE_TCP_BASE_PORT + i))
 
-    START_PIDS+=($!)
-done
+    log_info "Starting ${NODE_ID} on ${HOST} (vLLM:${VLLM_PORT}, TCP:${NODE_TCP_PORT})..."
 
-# Wait for all SSH commands to complete
-echo ""
-log_info "Waiting for all nodes to start..."
-for pid in "${START_PIDS[@]}"; do
-    wait $pid
-done
+    # Start vLLM server (with disaggregated prefill mode)
+    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "cd ${REMOTE_DIR} && mkdir -p logs && \
+        export PYTHONPATH=${VLLM_PATH}:\${PYTHONPATH} && \
+        nohup python -m vllm.entrypoints.openai.api_server \
+            --model ${MODEL_NAME} \
+            --host 0.0.0.0 \
+            --port ${VLLM_PORT} \
+            --max-model-len ${MODEL_MAX_LEN} \
+            --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} \
+            --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
+            --disable-log-requests \
+            --kv-connector rdma_connector \
+            --kv-role send \
+            > logs/${NODE_ID}-vllm.log 2>&1 < /dev/null &"
 
-# Give nodes a moment to initialize and connect to coordinator
-sleep 3
+    # Give vLLM time to start
+    sleep 5
 
-# Verify nodes are running
-echo ""
-log_info "Verifying nodes are running..."
-echo ""
+    # Start C++ prefill node
+    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "cd ${REMOTE_DIR} && \
+        nohup ./build/bin/prefill_node --config configs/prefill_node.yaml \
+            --node-id ${NODE_ID} \
+            --tcp-port ${NODE_TCP_PORT} \
+            --vllm-port ${VLLM_PORT} \
+            --orchestrator ${ORCHESTRATOR_HOST}:${ORCHESTRATOR_PORT} \
+            > logs/${NODE_ID}-node.log 2>&1 < /dev/null &"
 
-ALL_RUNNING=true
-for i in $(seq 0 $((NUM_NODES - 1))); do
-    NODE="${SELECTED_NODES[$i]}"
-    FULL_HOST=$(get_full_hostname "$NODE")
+    sleep 2
 
-    # Check if rht_node is running
-    IS_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${FULL_HOST}" \
-        "ps aux | grep -E '[r]ht_node.*--config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+    # Verify both processes started
+    VLLM_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pgrep -f 'vllm.*--port ${VLLM_PORT}' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+    NODE_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pgrep -f 'prefill_node --config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
 
-    if [ "$IS_RUNNING" == "yes" ]; then
-        log_success "Node $i ($NODE) is RUNNING"
+    if [ "$VLLM_RUNNING" == "yes" ] && [ "$NODE_RUNNING" == "yes" ]; then
+        log_success "${NODE_ID} started (vLLM + C++ node)"
     else
-        log_error "Node $i ($NODE) is NOT RUNNING"
-        ALL_RUNNING=false
+        log_error "${NODE_ID} failed to start (vLLM:${VLLM_RUNNING}, Node:${NODE_RUNNING})"
     fi
 done
 
 echo ""
 
-if [ "$ALL_RUNNING" = true ]; then
-    log_success "All nodes started successfully!"
-else
-    log_warning "Some nodes failed to start. Check logs."
-    exit 1
-fi
+# ============================================
+# Step 3: Start Decode Nodes (vLLM + C++ node)
+# ============================================
 
-echo ""
-echo "=========================================="
-echo "Cluster Information"
-echo "=========================================="
-echo ""
-echo "Coordinator: $COORDINATOR_FULL_HOST"
-echo "  Log: ssh ${USERNAME}@${COORDINATOR_FULL_HOST} 'tail -f ${REMOTE_DIR}/logs/${COORDINATOR_NODE}.log'"
-echo ""
-echo "RHT Nodes:"
-for i in $(seq 0 $((NUM_NODES - 1))); do
-    NODE="${SELECTED_NODES[$i]}"
-    FULL_HOST=$(get_full_hostname "$NODE")
-    echo ""
-    echo "  Node $i: $FULL_HOST"
-    echo "    Log: ssh ${USERNAME}@${FULL_HOST} 'tail -f ${REMOTE_DIR}/logs/${NODE}.log'"
-    echo "    Connect client: ./build/rht_client ${FULL_HOST}:${BASE_CLIENT_PORT}"
+log_step "Starting decode nodes..."
+
+for i in "${!DECODE_NODES[@]}"; do
+    NODE="${DECODE_NODES[$i]}"
+    HOST=$(get_full_hostname "$NODE")
+    NODE_ID="decode-$(printf '%02d' $i)"
+    VLLM_PORT=$((VLLM_DECODE_BASE_PORT + i))
+    NODE_TCP_PORT=$((NODE_TCP_BASE_PORT + 100 + i))
+
+    log_info "Starting ${NODE_ID} on ${HOST} (vLLM:${VLLM_PORT}, TCP:${NODE_TCP_PORT})..."
+
+    # Start vLLM server (with disaggregated decode mode)
+    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "cd ${REMOTE_DIR} && mkdir -p logs && \
+        export PYTHONPATH=${VLLM_PATH}:\${PYTHONPATH} && \
+        nohup python -m vllm.entrypoints.openai.api_server \
+            --model ${MODEL_NAME} \
+            --host 0.0.0.0 \
+            --port ${VLLM_PORT} \
+            --max-model-len ${MODEL_MAX_LEN} \
+            --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} \
+            --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
+            --disable-log-requests \
+            --kv-connector rdma_connector \
+            --kv-role recv \
+            > logs/${NODE_ID}-vllm.log 2>&1 < /dev/null &"
+
+    # Give vLLM time to start
+    sleep 5
+
+    # Start C++ decode node
+    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "cd ${REMOTE_DIR} && \
+        nohup ./build/bin/decode_node --config configs/decode_node.yaml \
+            --node-id ${NODE_ID} \
+            --tcp-port ${NODE_TCP_PORT} \
+            --vllm-port ${VLLM_PORT} \
+            --orchestrator ${ORCHESTRATOR_HOST}:${ORCHESTRATOR_PORT} \
+            > logs/${NODE_ID}-node.log 2>&1 < /dev/null &"
+
+    sleep 2
+
+    # Verify both processes started
+    VLLM_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pgrep -f 'vllm.*--port ${VLLM_PORT}' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+    NODE_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "pgrep -f 'decode_node --config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+
+    if [ "$VLLM_RUNNING" == "yes" ] && [ "$NODE_RUNNING" == "yes" ]; then
+        log_success "${NODE_ID} started (vLLM + C++ node)"
+    else
+        log_error "${NODE_ID} failed to start (vLLM:${VLLM_RUNNING}, Node:${NODE_RUNNING})"
+    fi
 done
 
 echo ""
-log_info "Useful commands:"
-echo "  Monitor cluster:  ./smart_monitor.sh"
-echo "  Stop cluster:     ./smart_stop.sh"
-echo "  Collect data:     ./smart_collect.sh"
+
+# ============================================
+# Summary
+# ============================================
+
+log_success "=========================================="
+log_success "All components started successfully!"
+log_success "=========================================="
+echo ""
+echo "Orchestrator:"
+echo "  Node: ${ORCHESTRATOR_HOST}"
+echo "  Port: ${ORCHESTRATOR_PORT}"
+echo "  Log:  ssh ${USERNAME}@${ORCHESTRATOR_HOST} 'tail -f ${REMOTE_DIR}/logs/orchestrator.log'"
+echo ""
+echo "Prefill Nodes:"
+for i in "${!PREFILL_NODES[@]}"; do
+    NODE="${PREFILL_NODES[$i]}"
+    HOST=$(get_full_hostname "$NODE")
+    NODE_ID="prefill-$(printf '%02d' $i)"
+    VLLM_PORT=$((VLLM_PREFILL_BASE_PORT + i))
+    echo "  ${NODE_ID}: ${HOST}:${VLLM_PORT}"
+    echo "    vLLM log: ssh ${USERNAME}@${HOST} 'tail -f ${REMOTE_DIR}/logs/${NODE_ID}-vllm.log'"
+    echo "    Node log: ssh ${USERNAME}@${HOST} 'tail -f ${REMOTE_DIR}/logs/${NODE_ID}-node.log'"
+done
+echo ""
+echo "Decode Nodes:"
+for i in "${!DECODE_NODES[@]}"; do
+    NODE="${DECODE_NODES[$i]}"
+    HOST=$(get_full_hostname "$NODE")
+    NODE_ID="decode-$(printf '%02d' $i)"
+    VLLM_PORT=$((VLLM_DECODE_BASE_PORT + i))
+    echo "  ${NODE_ID}: ${HOST}:${VLLM_PORT}"
+    echo "    vLLM log: ssh ${USERNAME}@${HOST} 'tail -f ${REMOTE_DIR}/logs/${NODE_ID}-vllm.log'"
+    echo "    Node log: ssh ${USERNAME}@${HOST} 'tail -f ${REMOTE_DIR}/logs/${NODE_ID}-node.log'"
+done
+echo ""
+echo "Test the system:"
+echo "  ./scripts/test_request.sh \"Once upon a time\""
+echo ""
+echo "Stop the system:"
+echo "  ./scripts/smart_stop.sh"
+echo ""

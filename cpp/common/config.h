@@ -11,6 +11,48 @@ struct PeerConfig
     uint32_t server_socket_port;
 };
 
+// ── GPUDirect RDMA Configuration ─────────────────────────────────────────────
+struct RdmaConfig
+{
+    // IB device selection
+    std::vector<std::string> ib_devices; // Empty = auto-select first active
+    int ib_port = 1;                     // Physical port (usually 1)
+    int gid_index = 0;                   // 0=IB, 3=RoCEv2
+
+    // QP parameters
+    int mtu = 4096;              // Path MTU (512/1024/2048/4096)
+    int sl = 0;                  // Service Level
+    int qp_max_send_wr = 64;     // Max outstanding send WRs
+    int qp_max_recv_wr = 64;     // Max outstanding recv WRs
+    int qp_max_inline_data = 64; // Inline data threshold
+    int max_rd_atomic = 16;      // Max RDMA read/atomic ops
+    int min_rnr_timer = 12;      // RNR retry timer (~0.64ms)
+    int timeout = 14;            // ACK timeout (~67ms)
+    int retry_cnt = 7;           // Retry count before QP error
+    int rnr_retry = 7;           // RNR retry (7 = infinite)
+
+    // CQ depth
+    int cq_depth = 128;
+};
+
+struct MemoryConfig
+{
+    size_t kv_buffer_mb = 1024;      // GPU memory buffer size in MB
+    int num_kv_chunks = 16;          // Number of chunks for pipelined transfer
+    size_t chunk_size_mb = 64;       // Size of each chunk in MB (64-128 recommended)
+    bool mr_relaxed_ordering = true; // Enable PCIe relaxed ordering
+    int max_concurrent_requests = 8; // Max simultaneous KV transfers
+};
+
+struct GpuConfig
+{
+    std::vector<int> gpu_ids;       // Empty = use all available GPUs
+    bool enable_peer_access = true; // Enable P2P between GPUs
+    bool require_same_numa = false; // Require GPU and HCA on same NUMA node
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 class Config
 {
 public:
@@ -30,6 +72,8 @@ public:
     uint32_t quorum_write_requirement;
     std::string monitoring_host;
     uint32_t monitoring_port;
+    std::string orchestrator_id;
+    uint32_t num_layers;
 
     std::string role;
 
@@ -38,8 +82,12 @@ public:
     int expected_decode_nodes;
     int expected_prefill_nodes;
 
-    std::vector<PeerConfig>
-        peers;
+    std::vector<PeerConfig> peers;
+
+    // ── GPUDirect RDMA Configuration ─────────────────────────────────────────
+    RdmaConfig rdma;
+    MemoryConfig memory;
+    GpuConfig gpu;
 
     static Config fromFile(const std::string &path);
     static Config fromArgs(int argc, char *argv[]);

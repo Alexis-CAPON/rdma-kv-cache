@@ -3,15 +3,29 @@
 #include <vector>
 #include <cstdint>
 
-struct QMap
+struct KVMetaData
+{
+    uint32_t num_layers;
+    uint32_t num_tokens;
+};
+
+struct PeerInfoandQPs
 {
     std::string peer_node_id; // Who this QP is for
 
     // Local QP info (this node's side of connection)
-    uint32_t qp_num;
-    uint16_t lid;
-    uint8_t gid[16];
-    uint32_t psn;
+    uint32_t local_qp_num;
+    uint16_t local_lid;
+    uint8_t local_gid[16];
+    uint32_t local_psn;
+
+    // Remote QP info (peer node's side of connection)
+    uint32_t remote_qp_num;
+    uint16_t remote_lid;
+    uint8_t remote_gid[16];
+    uint32_t remote_psn;
+    uint64_t remote_rkey;
+    uint64_t remote_addr;
 };
 
 // Node information
@@ -20,24 +34,37 @@ struct NodeInfo
     std::string node_id;
     NodeRole role;
     std::string ip_address;
-    uint16_t tcp_port;  // For orchestrator communication
-    uint16_t vllm_port; // vLLM HTTP port
+    uint16_t tcp_port;                                // For orchestrator communication
+    int node_own_orchestrator_fd;                     // TCP connection fd to orchestrator (if connected)
+    std::vector<std::string, int> node_other_node_fd; // TCP connection fd to other node (if connected)
+    uint16_t vllm_port;                               // vLLM HTTP port
     bool is_healthy;
 
-    int gpu_lid; // For RDMA transfers
+    // ── GPUDirect RDMA Device Info ───────────────────────────────────────────────
+    int gpu_id;           // CUDA device ID (0-based)
+    std::string gpu_name; // GPU model name (e.g., "Tesla V100")
+    int gpu_numa;         // NUMA node of GPU (-1 if unavailable)
+    size_t gpu_mem_bytes; // Total GPU memory
 
-    uint64_t rkey;
-    uint64_t gpu_base_addr;
-    uint64_t lkey;
-    size_t memory_pool_size;
+    std::string ib_dev_name; // InfiniBand device (e.g., "mlx5_0")
+    int ib_port;             // IB port number (usually 1)
+    int ib_numa;             // NUMA node of HCA (-1 if unavailable)
+    uint64_t ib_speed_gbps;  // Link speed in Gb/s
 
-    std::vector<QMap> qmaps; // For RDMA connection info exchange
+    // ── Memory Region Info ───────────────────────────────────────────────────────
+    uint64_t gpu_base_addr;  // GPU memory region base address (d_ptr)
+    uint64_t lkey;           // Local key for this node's MR
+    uint64_t rkey;           // Remote key for this node's MR (shared with peers)
+    size_t memory_pool_size; // Size of GPU memory region in bytes
 
-    // Example:
-    // prefill-01's qmaps: [
-    //   {peer_id: "decode-01", qp_num: 100, lid: 1, ...},
-    //   {peer_id: "decode-02", qp_num: 101, lid: 1, ...},
-    //   {peer_id: "decode-03", qp_num: 102, lid: 1, ...}
+    // ── Queue Pair Info ──────────────────────────────────────────────────────────
+    std::vector<PeerInfoandQPs> qmaps; // QP connection info for each peer
+
+    // Example for prefill-01 connecting to 3 decode nodes:
+    // qmaps: [
+    //   {peer_id: "decode-01", local_qp_num: 100, ..., remote_qp_num: 200, ...},
+    //   {peer_id: "decode-02", local_qp_num: 101, ..., remote_qp_num: 201, ...},
+    //   {peer_id: "decode-03", local_qp_num: 102, ..., remote_qp_num: 202, ...}
     // ]
 };
 
@@ -54,13 +81,6 @@ struct KVLayerMetadata
 };
 
 // RDMA connection info for QP exchange
-struct QpInfo
-{
-    uint32_t qp_num;
-    uint16_t lid;
-    uint8_t gid[16];
-    uint32_t psn; // Packet sequence number
-};
 
 enum class NodeRole
 {
@@ -80,19 +100,23 @@ enum class MessageType
 
     // Orchestrator -> Node
     ASSIGN_REQUEST,
+    PREFILL_COMPLETE,
     // HEALTH_CHECK,
 
     // Node -> Orchestrator
-    BROADCAST_MEMBER_INFO,      // Used by prefill/decode node to handle the QP map and all the RDMA info by the orchestrator and connect all QP between all the node and then send confirmation to orchestator
-    RDMA_REGISTRATION_COMPLETE, // Used by a node to signal completion of RDMA registration by a node
-    PREFILL_COMPLETE,           // Used by prefill node to inform orchestrator that prefill phase is complete
-    DECODE_COMPLETE,            // Also useby prefill node to signal completion of prefill phase to decode node
+    BROADCAST_MEMBER_INFO,         // Used by prefill/decode node to handle the QP map and all the RDMA info by the orchestrator and connect all QP between all the node and then send confirmation to orchestator
+    RDMA_REGISTRATION_COMPLETE,    // Used by a node to signal completion of RDMA registration by a node
+    PREFILL_COMPLETE_ORCHESTRATOR, // Used by prefill node to inform orchestrator that prefill phase is complete
+    DECODE_COMPLETE,               // Also useby prefill node to signal completion of prefill phase to decode node
     REQUEST_FAILED,
 
     RDMA_READY, // Used by prefill/decode node to signal to orchestrator that we are ready for RDMA communication
 
     // Node -> Node (via orchestrator)
-    TRANSFER_READY
+    TRANSFER_READY, // Decode signals prefill it's ready to receive KV cache
+
+    // RDMA-specific (internal to decode node)
+    KV_CHUNK_ARRIVED // Generated by RdmaPoller when chunk received
 };
 
 struct RequestInfo

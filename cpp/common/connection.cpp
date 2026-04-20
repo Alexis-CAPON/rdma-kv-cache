@@ -130,7 +130,7 @@ bool Connection::connect_with_ip(const std::string &ip_address, uint16_t port)
     }
 
     // 3. Connect (blocking)
-    if (::connect(sockfd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
+    if (::connect(sockfd_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0)
     {
         ::close(sockfd_);
         sockfd_ = -1;

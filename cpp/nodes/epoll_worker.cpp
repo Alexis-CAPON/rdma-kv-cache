@@ -8,23 +8,29 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
+#include "cpp/common/types.h"
 
-EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server)
+// Constructor for Orchestrator
+EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server, NodeInfo &node_info, NodeRegistry &node_registry)
     : running_(false),
       event_queue_(eventqueue),
       client_tcp_server_(client_tcp_server),
       server_tcp_server_(server_tcp_server),
-      epoll_fd_(-1)
+      epoll_fd_(-1),
+      node_registry_(node_registry)
+
 {
     Logger::info("EpollWorker initialized with client TCP server on port " + std::to_string(client_tcp_server_.get_fd()) +
                  " and server TCP server on port " + std::to_string(server_tcp_server_.get_fd()));
 }
 
-EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server)
+// Constructor for Prefill/Decode nodes
+EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server, NodeInfo &node_info)
     : running_(false),
       event_queue_(eventqueue),
       client_tcp_server_(nullptr),
       server_tcp_server_(server_tcp_server),
+      node_info_(node_info),
       epoll_fd_(-1)
 {
     Logger::info("EpollWorker initialized with server TCP server on port " + std::to_string(server_tcp_server_.get_fd()));
@@ -286,6 +292,19 @@ void EpollWorker::handle_server_accept()
         {
             // No more connections (EAGAIN) or error
             break;
+        }
+
+        if (node_info_.role != nullptr && (node_info_.role == NodeRole::PREFILL || node_info_.role == NodeRole::DECODE))
+        {
+            // We add the connection to the NodeInfo
+            node_info_.node_other_node_fd.push_back({new_conn->get_node_host(), new_conn->get_fd()});
+            Logger::info("EpollWorker: accepted new server connection from " + new_conn->get_node_host() + " fd=" + std::to_string(new_conn->get_fd()));
+        }
+
+        else
+        {
+            // We add the connection to the registry
+            node_registry_.add_node_fd(new_conn->get_node_host(), new_conn->get_fd());
         }
 
         int fd = new_conn->get_fd();
@@ -704,4 +723,70 @@ void EpollWorker::enqueue_response(int client_fd, const Message &response)
 
     Logger::debug("EpollWorker::enqueue_response: queued " + std::to_string(serialized.size()) +
                   " bytes for client_fd=" + std::to_string(client_fd));
+}
+
+bool EpollWorker::connect_to_orchestrator(const std::string &host, uint32_t port)
+{
+    // Create NEW client connection (separate from our listening socket)
+    auto conn = std::make_unique<Connection>();
+
+    // This creates a new socket() and connect()s to the peer
+    if (!conn->connect(host, port))
+    {
+        Logger::error("EpollWorker: failed to connect to orchestrator " + host + ":" + std::to_string(port));
+        return false;
+    }
+
+    int orchestrator_fd_ = conn->get_fd();
+
+    node_info_.node_own_orchestrator_fd = orchestrator_fd_;
+
+    Logger::info("EpollWorker: connected to orchestrator " + host + ":" + std::to_string(port) +
+                 " (fd=" + std::to_string(orchestrator_fd_) + ")");
+
+    // Add to epoll and connections map
+    return add_connection(std::move(conn), SERVER_CONN);
+}
+
+bool EpollWorker::connect_to_peer(const std::string &host, uint32_t port)
+{
+    // Create NEW client connection (separate from our listening socket)
+    auto conn = std::make_unique<Connection>();
+
+    // This creates a new socket() and connect()s to the peer
+    if (!conn->connect(host, port))
+    {
+        Logger::error("EpollWorker: failed to connect to peer " + host + ":" + std::to_string(port));
+        return false;
+    }
+
+    int peer_fd = conn->get_fd();
+
+    node_info_.node_own_peer_fd.push_back(peer_fd);
+
+    Logger::info("EpollWorker: connected to peer " + host + ":" + std::to_string(port) +
+                 " (fd=" + std::to_string(peer_fd) + ")");
+
+    // Add to epoll and connections map
+    return add_connection(std::move(conn), SERVER_CONN);
+}
+
+bool EpollWorker::send_node_info_to_orchestrator()
+{
+    if (orchestrator_fd_ < 0)
+    {
+        Logger::warning("EpollWorker: not connected to orchestrator, cannot send node info");
+        return false;
+    }
+
+    Message msg = Message::create_rdma_process_registration(config_.node_id, node_info_);
+    if (!enqueue_response(orchestrator_fd_, msg))
+    {
+        Logger::error("EpollWorker: failed to enqueue node info message to orchestrator");
+        return false;
+    }
+
+    Logger::info("EpollWorker: sent node info to orchestrator");
+
+    return true;
 }
