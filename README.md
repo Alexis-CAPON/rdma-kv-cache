@@ -2,7 +2,7 @@
 
 High-performance LLM inference system that separates prefill and decode phases across multiple GPUs, using RDMA for ultra-low-latency KV cache transfer.
 
-## 🎯 Quick Start
+## Quick Start
 
 ```bash
 # 1. Install dependencies on all nodes (one-time)
@@ -25,7 +25,7 @@ High-performance LLM inference system that separates prefill and decode phases a
 ./scripts/smart_stop.sh
 ```
 
-## 📖 Documentation
+## Documentation
 
 | Document                                             | Description                                 |
 | ---------------------------------------------------- | ------------------------------------------- |
@@ -34,7 +34,7 @@ High-performance LLM inference system that separates prefill and decode phases a
 | **[BENCHMARK_GUIDE.md](BENCHMARK_GUIDE.md)**         | Benchmarking and performance testing        |
 | **[VERIFICATION_REPORT.md](VERIFICATION_REPORT.md)** | End-to-end implementation verification      |
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 Benchmark Client (TCP) → Orchestrator → Prefill Node (vLLM)
@@ -50,7 +50,7 @@ Benchmark Client (TCP) → Orchestrator → Prefill Node (vLLM)
 - **GPUDirect RDMA**: Direct GPU-to-GPU memory transfer (bypasses CPU)
 - **Benchmark Client**: C++ client that establishes persistent TCP connection to orchestrator
 
-## 🚀 Features
+## Features
 
 - ✅ Zero-copy RDMA on prefill side (register vLLM memory)
 - ✅ GPUDirect RDMA (nvidia-peermem kernel module)
@@ -59,9 +59,8 @@ Benchmark Client (TCP) → Orchestrator → Prefill Node (vLLM)
 - ✅ Persistent TCP connection benchmark client
 - ✅ Comprehensive deployment scripts
 - ✅ Automated dependency installation
-- ⚠️ 3 orchestrator handlers need implementation (see VERIFICATION_REPORT.md)
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 rdma-kv-cache/
@@ -91,13 +90,13 @@ rdma-kv-cache/
 └── docs/                          # Additional documentation
 ```
 
-## 🛠️ Prerequisites
+## Prerequisites
 
 - **Hardware**: NVIDIA GPUs (A100), Mellanox ConnectX InfiniBand
 - **OS**: Ubuntu 24.04
 - **Software**: CUDA 12.6, Python 3.10+, CMake 3.18+
 
-## 🎮 Usage Examples
+## Usage Examples
 
 ### Benchmark Client (Single Request)
 
@@ -141,7 +140,7 @@ ssh Alexis@clgpu012.clemson.cloudlab.us 'tail -f ~/rdma-kv-cache/logs/prefill-00
 ssh Alexis@clgpu013.clemson.cloudlab.us 'tail -f ~/rdma-kv-cache/logs/decode-00-vllm.log'
 ```
 
-## 📊 Performance
+## Performance
 
 **Expected Metrics** (preliminary):
 
@@ -150,7 +149,7 @@ ssh Alexis@clgpu013.clemson.cloudlab.us 'tail -f ~/rdma-kv-cache/logs/decode-00-
 - **Decode**: 500-2000ms (depends on tokens generated)
 - **End-to-End Latency**: 600-2200ms per request
 
-## 🔧 Configuration
+## Configuration
 
 Edit `scripts/deploy_config.sh`:
 
@@ -171,7 +170,7 @@ node:
   qp_max_send_wr: 128 # RDMA queue depth
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Verify GPUDirect RDMA
@@ -187,14 +186,14 @@ node:
 ./scripts/benchmark_suite.sh
 ```
 
-## 📚 Research
+## Research
 
 This project implements disaggregated inference as described in:
 
 - [vLLM Disaggregated Inference](https://docs.vllm.ai/en/latest/features/disagg_prefill.html)
 - [GPUDirect RDMA](https://docs.nvidia.com/cuda/gpudirect-rdma/)
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Built on [vLLM](https://github.com/vllm-project/vllm)
 - Uses [Mellanox nvidia-peermem](https://github.com/Mellanox/nv_peer_memory) for GPUDirect
