@@ -55,6 +55,8 @@ public:
      */
     bool is_initialized() const { return initialized_; }
 
+    const NodeInfo &get_node_info() const { return node_info_; }
+
     // ========================================
     // Data Transfer
     // ========================================

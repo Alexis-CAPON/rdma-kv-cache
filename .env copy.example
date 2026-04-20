@@ -1,0 +1,37 @@
+# ============================================
+# CloudLab Deployment Configuration
+# ============================================
+# Copy this file to .env and customize for your setup
+# cp .env.example .env
+
+# CloudLab Username
+CLOUDLAB_USERNAME=Alexis
+
+# CloudLab Domain (typically cloudlab.us)
+CLOUDLAB_DOMAIN=clemson.cloudlab.us
+
+# SSH Configuration
+SSH_KEY_PATH=~/.ssh/id_cloudlab_rh
+SSH_STRICT_HOST_CHECKING=no
+SSH_USER_KNOWN_HOSTS_FILE=/dev/null
+
+# CloudLab Nodes (comma-separated list of hostnames without domain)
+# Example: clgpu014,clgpu012,clgpu015,clgpu013,clgpu021
+CLOUDLAB_NODES=clgpu014,clgpu012,clgpu015,clgpu013,clgpu021
+
+# Remote Directory on CloudLab Nodes
+REMOTE_DIR=/users/${CLOUDLAB_USERNAME}/rdma-kv-cache
+
+# Local Project Directory
+LOCAL_DIR=$(pwd)
+
+# Build Configuration
+BUILD_TYPE=Release
+BUILD_JOBS=8
+
+# CUDA Configuration
+CUDA_ARCH=sm_80
+
+# Network Configuration
+IB_DEVICE=mlx5_0
+IB_PORT=1

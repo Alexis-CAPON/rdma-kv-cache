@@ -134,6 +134,15 @@ void Node::shutdown()
 
     Logger::info("Shutting down Node...");
 
+    if (vllm_pid > 0)
+    {
+        Logger::info("Terminating VLLM server (PID " + std::to_string(vllm_pid) + ")...");
+        kill(vllm_pid, SIGTERM);
+        int status;
+        waitpid(vllm_pid, &status, 0);
+        Logger::info("VLLM server terminated");
+    }
+
     // Update state
     state_.store(State::STOPPED);
 
@@ -158,4 +167,39 @@ void Node::shutdown()
     Logger::info("========================================");
     Logger::info("Node Shutdown Complete (" + config_.role + ")");
     Logger::info("========================================");
+}
+
+bool Node::start_vllm_server()
+{
+    set_current_node(this);
+
+    vllm_pid = fork();
+    if (vllm_pid == 0)
+    {
+        // Child process - start VLLM server
+        std::string cmd = "python -m vllm.entrypoints.openai.api_server "
+                          "--model " +
+                          config_.model_name + " "
+                                               "--kv-transfer-config " +
+                          std::to_string(config_.size_local_buffer) + "," +
+                          std::to_string(config_.num_kv_chunks) + "," +
+                          std::to_string(config_.chunk_size_mb) + " "
+                                                                  "--port " +
+                          std::to_string(config_.vllm_port) + " ";
+
+        execl("/bin/sh", "sh", "-c", cmd.c_str(), (char *)NULL);
+        // If execl returns, it means it failed
+        Logger::error("Failed to start VLLM server with command: " + cmd);
+        exit(1);
+    }
+    else if (vllm_pid < 0)
+    {
+        Logger::error("Failed to fork process for VLLM server");
+        return false;
+    }
+
+    sleep(5); // Simple approach, or implement health check
+
+    Logger::info("vLLM server started with PID " + std::to_string(vllm_pid));
+    return true;
 }

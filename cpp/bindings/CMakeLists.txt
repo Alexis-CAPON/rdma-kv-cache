@@ -5,12 +5,14 @@ cmake_minimum_required(VERSION 3.18)
 # Find pybind11
 find_package(pybind11 REQUIRED)
 
-# Create Python module
+# ============================================================================
+# RDMA Bindings Module
+# ============================================================================
+
 pybind11_add_module(rdma_bindings
     rdma_bindings.cpp
 )
 
-# Link to RDMA engine and dependencies
 target_link_libraries(rdma_bindings
     PRIVATE
         rdma_engine
@@ -25,7 +27,29 @@ target_include_directories(rdma_bindings PRIVATE
     ${CUDA_INCLUDE_DIRS}
 )
 
-# Install Python module
-install(TARGETS rdma_bindings
+# ============================================================================
+# Node Accessor Module
+# ============================================================================
+
+pybind11_add_module(node_accessor
+    node_accessor.cpp
+)
+
+target_link_libraries(node_accessor
+    PRIVATE
+        nodes
+        rdma_engine
+        common
+)
+
+target_include_directories(node_accessor PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+# ============================================================================
+# Installation
+# ============================================================================
+
+install(TARGETS rdma_bindings node_accessor
     LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/python
 )

@@ -48,6 +48,7 @@ class RDMAConnector(ExampleConnector):
       
       Configuration via kv_connector_extra_config:
           - role: "send" (prefill) or "recv" (decode)
+          - peer_id: ID of remote peer node (for RDMA connection)
           - rdma_device: InfiniBand device name (e.g., "mlx5_0")
           - rdma_port: IB port number (default: 1)
           - rdma_gid_index: GID index (default: 0)
@@ -76,6 +77,7 @@ class RDMAConnector(ExampleConnector):
 
           # Remote peer information
           self._rdma_qp_num = self._kv_transfer_config.get_from_extra_config("rdma_qp_num", 0)
+          self._peer_id = self._kv_transfer_config.get_from_extra_config("peer_id", 0)
           self._rdma_remote_addr = self._kv_transfer_config.get_from_extra_config(
               "rdma_remote_addr", 0
           )
@@ -90,15 +92,12 @@ class RDMAConnector(ExampleConnector):
 
           # Initialize RDMA
           if RDMA_AVAILABLE:
-              engine_ptr = node_accessor.set_current_node(self._rdma)
+              engine_ptr = node_accessor.get_node_rdma_engine_ptr()
+
+              if not engine_ptr:
+                    raise RuntimeError("Failed to get RDMA engine pointer from node accessor")
               self._rdma = rdma_bindings.RDMABindings(engine_ptr)  
-              success = self._rdma.initialize(
-                  self._rdma_device,
-                  self._rdma_port,
-                  self._rdma_gid_index
-              )
-              if not success:
-                  raise RuntimeError("Failed to initialize RDMA engine")
+
           else:
               self._rdma = None
 
@@ -249,7 +248,6 @@ class RDMAConnector(ExampleConnector):
               rdma_offset = self._calculate_rdma_offset(
                   layer_name, request.token_ids, request.mm_hashes
               )
-              remote_addr = self._rdma_remote_addr + rdma_offset
 
               # RDMA write K and V caches
               if kv_cache.shape[0] == 2:  # Standard format: (2, num_tokens, hidden_dim)
@@ -263,7 +261,7 @@ class RDMAConnector(ExampleConnector):
               if RDMA_AVAILABLE:
                   self._rdma_write(
                       local_ptr=k_cache.data_ptr(),  # vLLM's GPU memory (registered!)
-                      remote_addr=remote_addr,
+                      remote_offset=rdma_offset,  # Calculated offset for this layer/request
                       size=k_cache.numel() * k_cache.element_size(),
                   )
 
@@ -271,7 +269,7 @@ class RDMAConnector(ExampleConnector):
                   v_offset = k_cache.numel() * k_cache.element_size()
                   self._rdma_write(
                       local_ptr=v_cache.data_ptr(),
-                      remote_addr=remote_addr + v_offset,
+                      remote_offset=rdma_offset + v_offset,
                       size=v_cache.numel() * v_cache.element_size(),
                   )
 
@@ -444,13 +442,14 @@ class RDMAConnector(ExampleConnector):
       # Helper Methods
       # ========================================================================
 
-      def _rdma_write(self, local_ptr: int, remote_addr: int, size: int) -> None:
+      def _rdma_write(self, local_ptr: int, remote_offset: int, size: int) -> None:
           """Perform RDMA write operation"""
           if RDMA_AVAILABLE:
               try:
                   success = self._rdma.rdma_write(
+                      peer_id = self._peer_id,
                       local_addr=local_ptr,
-                      remote_addr=remote_addr,
+                      remote_offset=remote_offset,
                       size=size,
                       qp_num=self._rdma_qp_num,
                       rkey=self._rdma_remote_rkey,
@@ -461,7 +460,7 @@ class RDMAConnector(ExampleConnector):
                   logger.error(f"RDMA write failed: {e}")
                   raise
           else:
-              logger.warning(f"Simulated RDMA write: {size} bytes to 0x{remote_addr:x}")
+              logger.warning(f"Simulated RDMA write: {size} bytes to offset 0x{remote_offset:x}")
 
       def _calculate_rdma_offset(
           self, layer_name: str, token_ids: torch.Tensor, mm_hashes: list[str]

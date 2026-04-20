@@ -6,7 +6,7 @@
 #include "cpp/common/messages.h"
 #include "cpp/common/connection.h"
 #include "cpp/common/logger.h"
-#include "cpp/apps/decode/decode_node.h"
+#include "cpp/nodes/node.h"
 #include <yaml-cpp/yaml.h>
 
 using namespace std;
@@ -51,7 +51,7 @@ int main(int argc, char *argv[])
         // Initialize node
         Config config = Config::fromFile(config_path);
 
-        DecodeNode decode_node(config);
+        Node decode_node(config);
 
         // Start all components
         if (!decode_node.start())
@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
         Logger::info("Shutting down...");
         decode_node.shutdown();
 
-        Logger::info("Orchestrator engine shut down cleanly");
+        Logger::info("Decode node shut down cleanly");
         return 0;
     }
     catch (const YAML::Exception &e)

@@ -235,7 +235,7 @@ int RDMAEngine::poll_send_cq(int count)
 {
     try
     {
-        poll_send_cq(rdma_ctx_, count);
+        ::poll_send_cq(rdma_ctx_, count);
         return count;
     }
     catch (const std::exception &ex)
@@ -669,7 +669,7 @@ bool RDMAEngine::post_write_external(
     const std::string &peer_id,
     uint64_t local_addr, // Absolute address (vLLM memory)
     uint32_t local_lkey, // lkey from vLLM's MR
-    size_t dst_offset,
+    uint64_t remote_offset,
     size_t length,
     uint32_t imm_data,
     bool signal)
@@ -690,7 +690,7 @@ bool RDMAEngine::post_write_external(
     wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
     wr.send_flags = signal ? IBV_SEND_SIGNALED : 0;
     wr.imm_data = htonl(imm_data);
-    wr.wr.rdma.remote_addr = peer_info->remote_addr + dst_offset;
+    wr.wr.rdma.remote_addr = peer_info->remote_addr + remote_offset;
     wr.wr.rdma.rkey = peer_info->remote_rkey;
 
     ibv_send_wr *bad_wr = nullptr;

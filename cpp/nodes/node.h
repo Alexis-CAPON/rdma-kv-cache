@@ -84,6 +84,7 @@ public:
     std::string get_hostname() const { return config_.hostname; }
 
     RDMAEngine *get_rdma_engine() { return &rdma_engine_; }
+    bool start_vllm_server();
 
 private:
     // Configuration
@@ -101,6 +102,8 @@ private:
     EventQueue event_queue_;
     EpollWorker epoll_worker_;
     WorkerPool worker_pool_;
+
+    pid_t vllm_pid = -1;
 
     // RDMA
 

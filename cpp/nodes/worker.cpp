@@ -486,6 +486,10 @@ void Worker::handle_broadcast_member_info(Message *msg)
 
     Logger::info("Successfully connected QP with peer " + peer.node_id);
 
+    // Start VLLM Server
+
+    Node::start_vllm_server();
+
     // Send RDMA_READY message to orchestrator to indicate that we are ready for RDMA communication after we finish connecting to all the node with RDMA
     auto ready_msg = Message::create_rdma_ready(node_info_.node_id);
 
@@ -539,7 +543,7 @@ void Worker::handle_assign_request(int orchestrator_fd, Message *msg)
         {"prompt", msg->request_info.prompt},
         {"max_tokens", 1}, // Prefill only
         {"temperature", 0.0},
-        {"extra_body", {{"kv_connector_config", {{"role", "send"}, {"rdma_device", node_info_.ib_dev_name}, {"rdma_port", node_info_.ib_port}, {"rdma_gid_index", config_.rdma.gid_index}, {"rdma_qp_num", decode_peer->local_qp_num}, {"rdma_remote_addr", decode_peer->remote_addr}, {"rdma_remote_rkey", decode_peer->remote_rkey}, {"layer_size", config_.memory.kv_buffer_mb * 1024 * 1024}, {"request_id", msg->request_info.request_id}}}}}};
+        {"extra_body", {{"kv_connector_config", {{"role", "send"}, {"rdma_device", node_info_.ib_dev_name}, {"rdma_port", node_info_.ib_port}, {"rdma_gid_index", config_.rdma.gid_index}, {"peer_id", decode_node_id}, {"rdma_qp_num", decode_peer->local_qp_num}, {"rdma_remote_addr", decode_peer->remote_addr}, {"rdma_remote_rkey", decode_peer->remote_rkey}, {"layer_size", config_.memory.kv_buffer_mb * 1024 * 1024}, {"request_id", msg->request_info.request_id}}}}}};
 
     // 3. HTTP POST to local vLLM
     std::string vllm_url = "http://localhost:" +

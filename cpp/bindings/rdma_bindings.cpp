@@ -15,7 +15,15 @@ public:
     RDMABindings(RDMAEngine *existing_rdma_engine)
         : rdma_engine_(existing_rdma_engine)
     {
-        Logger::info("RDMABindings initialized");
+        if (!rdma_engine_)
+        {
+            throw std::runtime_error("RDMAEngine pointer is null");
+        }
+        if (!rdma_engine_->is_initialized())
+        {
+            throw std::runtime_error("RDMAEngine not initialized");
+        }
+        Logger::info("RDMABindings initialized with existing RDMAEngine");
     }
 
     ~RDMABindings()
@@ -28,46 +36,6 @@ public:
                 ibv_dereg_mr(region.mr);
                 Logger::debug("Deregistered memory region: " + name);
             }
-        }
-    }
-
-    // ========================================
-    // Initialization
-    // ========================================
-
-    bool initialize(
-        const std::string &device_name,
-        int port = 1,
-        int gid_index = 0)
-    {
-        try
-        {
-            // Create Config and NodeInfo
-            Config config = create_default_config();
-            config.rdma.ib_port = port;
-            config.rdma.gid_index = gid_index;
-
-            NodeInfo node_info;
-            node_info.ib_dev_name = device_name;
-
-            rdma_engine_ = std::make_unique<RDMAEngine>(config, node_info);
-
-            if (!rdma_engine_->initialize())
-            {
-                Logger::error("RDMA engine initialization failed");
-                return false;
-            }
-
-            // Store context for memory registration
-            ctx_ = &rdma_engine_->get_context();
-
-            Logger::info("RDMA engine initialized successfully");
-            return true;
-        }
-        catch (const std::exception &e)
-        {
-            Logger::error("RDMA initialization failed: " + std::string(e.what()));
-            return false;
         }
     }
 
@@ -157,8 +125,9 @@ public:
     // ========================================
 
     bool rdma_write(
-        uint64_t local_addr,
-        uint64_t remote_addr,
+        const std::string &peer_id,
+        uint64_t local_addr, // Absolute address (vLLM memory)
+        uint64_t remote_offset,
         size_t size,
         uint32_t qp_num,
         uint32_t rkey)
@@ -180,22 +149,12 @@ public:
 
         try
         {
-            // Find peer_id from qp_num
-            std::string peer_id = find_peer_id_by_qp(qp_num);
-            if (peer_id.empty())
-            {
-                Logger::error("No peer found for QP " + std::to_string(qp_num));
-                return false;
-            }
 
-            // Calculate offsets
-            size_t src_offset = local_addr - get_base_ptr_for_lkey(lkey);
-            size_t dst_offset = remote_addr; // Assume this is already an offset
-
-            bool success = rdma_engine_->post_write(
+            bool success = rdma_engine_->post_write_external(
                 peer_id,
-                src_offset,
-                dst_offset,
+                local_addr,
+                lkey,
+                remote_offset,
                 size,
                 0,   // imm_data
                 true // signal
@@ -340,8 +299,9 @@ PYBIND11_MODULE(rdma_bindings, m)
              py::arg("gpu_ptr"),
              "Get lkey for a GPU pointer")
         .def("rdma_write", &RDMABindings::rdma_write,
+             py::arg("peer_id"),
              py::arg("local_addr"),
-             py::arg("remote_addr"),
+             py::arg("remote_offset"),
              py::arg("size"),
              py::arg("qp_num"),
              py::arg("rkey"),
