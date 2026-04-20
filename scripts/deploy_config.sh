@@ -5,30 +5,71 @@
 # ============================================
 # CloudLab deployment for RDMA-based KV cache transfer
 
+# Load environment variables from .env file
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+if [ -f "$ENV_FILE" ]; then
+    echo "Loading configuration from .env file..."
+    # Export variables from .env
+    set -a
+    source "$ENV_FILE"
+    set +a
+else
+    echo "WARNING: .env file not found at ${ENV_FILE}"
+    echo "Using default configuration. Copy .env.example to .env to customize."
+fi
+
+# ============================================
+# Default Configuration (fallback if .env not present)
+# ============================================
+
 # Your CloudLab username
-USERNAME="Alexis"
+USERNAME="${CLOUDLAB_USERNAME:-Alexis}"
 
-# Clemson CloudLab node list (clgpu r7525 machines)
-CLOUDLAB_NODES=(
-    "clgpu014.clemson.cloudlab.us"
-    "clgpu012.clemson.cloudlab.us"
-    "clgpu015.clemson.cloudlab.us"
-    "clgpu013.clemson.cloudlab.us"
-    "clgpu021.clemson.cloudlab.us"
-)
+# Parse CLOUDLAB_NODES from .env (comma-separated) or use defaults
+if [ -n "$CLOUDLAB_NODES" ]; then
+    IFS=',' read -r -a NODE_LIST <<< "$CLOUDLAB_NODES"
+    # Add domain to each node if not already present
+    CLOUDLAB_NODES=()
+    for node in "${NODE_LIST[@]}"; do
+        node=$(echo "$node" | xargs)  # trim whitespace
+        if [[ "$node" == *"."* ]]; then
+            CLOUDLAB_NODES+=("$node")
+        else
+            CLOUDLAB_NODES+=("${node}.${CLOUDLAB_DOMAIN:-clemson.cloudlab.us}")
+        fi
+    done
+else
+    # Default node list
+    CLOUDLAB_NODES=(
+        "clgpu014.clemson.cloudlab.us"
+        "clgpu012.clemson.cloudlab.us"
+        "clgpu015.clemson.cloudlab.us"
+        "clgpu013.clemson.cloudlab.us"
+        "clgpu021.clemson.cloudlab.us"
+    )
+fi
 
-# SSH key for passwordless access
-SSH_KEY="$HOME/.ssh/id_cloudlab_rh"
-SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+# SSH configuration
+SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_cloudlab_rh}"
+SSH_OPTS=()
+if [ "${SSH_STRICT_HOST_CHECKING:-no}" = "no" ]; then
+    SSH_OPTS+=(-o StrictHostKeyChecking=no)
+fi
+if [ -n "${SSH_USER_KNOWN_HOSTS_FILE}" ]; then
+    SSH_OPTS+=(-o UserKnownHostsFile="${SSH_USER_KNOWN_HOSTS_FILE}")
+fi
 if [ -f "$SSH_KEY" ]; then
     SSH_OPTS+=(-i "$SSH_KEY")
 fi
 
 # Remote directory on CloudLab nodes
-REMOTE_DIR="/users/${USERNAME}/rdma-kv-cache"
+REMOTE_DIR="${REMOTE_DIR:-/users/${USERNAME}/rdma-kv-cache}"
 
 # Local directory
-LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCAL_DIR="${LOCAL_DIR:-$PROJECT_ROOT}"
 
 # Port configuration
 ORCHESTRATOR_PORT=9000

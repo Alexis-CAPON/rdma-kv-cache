@@ -163,11 +163,11 @@ void RDMAEngine::shutdown()
 // ══════════════════════════════════════════════════════════════════════════════
 
 bool RDMAEngine::post_write(const std::string &peer_id,
-                             size_t src_offset,
-                             size_t dst_offset,
-                             size_t length,
-                             uint32_t imm_data,
-                             bool signal)
+                            size_t src_offset,
+                            size_t dst_offset,
+                            size_t length,
+                            uint32_t imm_data,
+                            bool signal)
 {
     // Find the QP for this peer
     auto it = peer_qps_.find(peer_id);
@@ -433,9 +433,9 @@ bool RDMAEngine::alloc_and_register_gpu_memory()
         node_info_.rkey = rdma_ctx_.mem.rkey;
         node_info_.memory_pool_size = rdma_ctx_.mem.bytes;
 
-        Logger::info("RDMAEngine: GPU memory registered successfully" +
-                     " rkey=0x" + std::to_string(node_info_.rkey) +
-                     " addr=0x" + std::to_string(node_info_.gpu_base_addr));
+        Logger::debug("RDMAEngine: GPU memory registered successfully" +
+                      " rkey=0x" + std::to_string(node_info_.rkey) +
+                      " addr=0x" + std::to_string(node_info_.gpu_base_addr));
 
         return true;
     }
@@ -571,7 +571,8 @@ bool RDMAEngine::connect_qp_to_peer(const std::string &peer_id, ibv_qp *qp)
         {
             ibv_qp_attr attr{};
             attr.qp_state = IBV_QPS_RTR;
-            attr.path_mtu = static_cast<ibv_mtu>([](int mtu) {
+            attr.path_mtu = static_cast<ibv_mtu>([](int mtu)
+                                                 {
                 switch (mtu)
                 {
                 case 512:
@@ -584,8 +585,7 @@ bool RDMAEngine::connect_qp_to_peer(const std::string &peer_id, ibv_qp *qp)
                     return IBV_MTU_4096;
                 default:
                     return IBV_MTU_4096;
-                }
-            }(config_.rdma.mtu));
+                } }(config_.rdma.mtu));
 
             attr.dest_qp_num = peer_info->remote_qp_num;
             attr.rq_psn = peer_info->remote_psn;
@@ -663,4 +663,36 @@ PeerInfoandQPs *RDMAEngine::find_peer_info(const std::string &peer_id)
         }
     }
     return nullptr;
+}
+
+bool RDMAEngine::post_write_external(
+    const std::string &peer_id,
+    uint64_t local_addr, // Absolute address (vLLM memory)
+    uint32_t local_lkey, // lkey from vLLM's MR
+    size_t dst_offset,
+    size_t length,
+    uint32_t imm_data,
+    bool signal)
+{
+
+    auto *peer_info = find_peer_info(peer_id);
+    auto *qp = peer_qps_[peer_id];
+
+    // Use the provided address and lkey directly
+    ibv_sge sge{};
+    sge.addr = local_addr; // ✓ vLLM's address
+    sge.length = length;
+    sge.lkey = local_lkey; // ✓ vLLM's lkey
+
+    ibv_send_wr wr{};
+    wr.sg_list = &sge;
+    wr.num_sge = 1;
+    wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+    wr.send_flags = signal ? IBV_SEND_SIGNALED : 0;
+    wr.imm_data = htonl(imm_data);
+    wr.wr.rdma.remote_addr = peer_info->remote_addr + dst_offset;
+    wr.wr.rdma.rkey = peer_info->remote_rkey;
+
+    ibv_send_wr *bad_wr = nullptr;
+    return ibv_post_send(qp, &wr, &bad_wr) == 0;
 }

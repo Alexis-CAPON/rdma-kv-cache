@@ -22,117 +22,117 @@
 namespace probe_detail
 {
 
-int pci_numa_node(const std::string &pci_bus_id)
-{
-    // CUDA bus IDs look like "0000:03:00.0"; sysfs path is /sys/bus/pci/devices/
-    std::string sysfs = "/sys/bus/pci/devices/" + pci_bus_id + "/numa_node";
-    std::ifstream f(sysfs);
-    if (!f.is_open())
-        return -1;
-    int node = -1;
-    f >> node;
-    return node;
-}
-
-uint64_t ib_speed_gbps(const ibv_port_attr &pa)
-{
-    // active_speed is a bitmask: 1=SDR(2.5), 2=DDR(5), 4=QDR(10),
-    //   8=FDR10(10), 16=FDR(14), 32=EDR(25), 64=HDR(50), 128=NDR(100)
-    uint64_t lane = 0;
-    switch (pa.active_speed)
+    int pci_numa_node(const std::string &pci_bus_id)
     {
-    case 1:
-        lane = 2;
-        break;
-    case 2:
-        lane = 5;
-        break;
-    case 4:
-        lane = 10;
-        break;
-    case 8:
-        lane = 10;
-        break;
-    case 16:
-        lane = 14;
-        break;
-    case 32:
-        lane = 25;
-        break;
-    case 64:
-        lane = 50;
-        break;
-    case 128:
-        lane = 100;
-        break;
-    default:
-        lane = 0;
+        // CUDA bus IDs look like "0000:03:00.0"; sysfs path is /sys/bus/pci/devices/
+        std::string sysfs = "/sys/bus/pci/devices/" + pci_bus_id + "/numa_node";
+        std::ifstream f(sysfs);
+        if (!f.is_open())
+            return -1;
+        int node = -1;
+        f >> node;
+        return node;
     }
 
-    // active_width: 1=1x, 2=4x, 4=8x, 8=12x
-    uint64_t width = 1;
-    switch (pa.active_width)
+    uint64_t ib_speed_gbps(const ibv_port_attr &pa)
     {
-    case 1:
-        width = 1;
-        break;
-    case 2:
-        width = 4;
-        break;
-    case 4:
-        width = 8;
-        break;
-    case 8:
-        width = 12;
-        break;
-    }
-    return lane * width;
-}
+        // active_speed is a bitmask: 1=SDR(2.5), 2=DDR(5), 4=QDR(10),
+        //   8=FDR10(10), 16=FDR(14), 32=EDR(25), 64=HDR(50), 128=NDR(100)
+        uint64_t lane = 0;
+        switch (pa.active_speed)
+        {
+        case 1:
+            lane = 2;
+            break;
+        case 2:
+            lane = 5;
+            break;
+        case 4:
+            lane = 10;
+            break;
+        case 8:
+            lane = 10;
+            break;
+        case 16:
+            lane = 14;
+            break;
+        case 32:
+            lane = 25;
+            break;
+        case 64:
+            lane = 50;
+            break;
+        case 128:
+            lane = 100;
+            break;
+        default:
+            lane = 0;
+        }
 
-std::string port_state_str(ibv_port_state s)
-{
-    switch (s)
+        // active_width: 1=1x, 2=4x, 4=8x, 8=12x
+        uint64_t width = 1;
+        switch (pa.active_width)
+        {
+        case 1:
+            width = 1;
+            break;
+        case 2:
+            width = 4;
+            break;
+        case 4:
+            width = 8;
+            break;
+        case 8:
+            width = 12;
+            break;
+        }
+        return lane * width;
+    }
+
+    std::string port_state_str(ibv_port_state s)
     {
-    case IBV_PORT_NOP:
-        return "NOP";
-    case IBV_PORT_DOWN:
-        return "PORT_DOWN";
-    case IBV_PORT_INIT:
-        return "PORT_INIT";
-    case IBV_PORT_ARMED:
-        return "PORT_ARMED";
-    case IBV_PORT_ACTIVE:
-        return "PORT_ACTIVE";
-    default:
-        return "UNKNOWN";
+        switch (s)
+        {
+        case IBV_PORT_NOP:
+            return "NOP";
+        case IBV_PORT_DOWN:
+            return "PORT_DOWN";
+        case IBV_PORT_INIT:
+            return "PORT_INIT";
+        case IBV_PORT_ARMED:
+            return "PORT_ARMED";
+        case IBV_PORT_ACTIVE:
+            return "PORT_ACTIVE";
+        default:
+            return "UNKNOWN";
+        }
     }
-}
 
-std::string ib_pci_bus_id(const std::string &dev_name)
-{
-    std::string link = "/sys/class/infiniband/" + dev_name + "/device";
-    char resolved[256] = {};
-    if (realpath(link.c_str(), resolved) == nullptr)
-        return "";
-    // Last component of resolved path is the PCI BDF
-    std::string path(resolved);
-    auto pos = path.rfind('/');
-    return (pos == std::string::npos) ? path : path.substr(pos + 1);
-}
+    std::string ib_pci_bus_id(const std::string &dev_name)
+    {
+        std::string link = "/sys/class/infiniband/" + dev_name + "/device";
+        char resolved[256] = {};
+        if (realpath(link.c_str(), resolved) == nullptr)
+            return "";
+        // Last component of resolved path is the PCI BDF
+        std::string path(resolved);
+        auto pos = path.rfind('/');
+        return (pos == std::string::npos) ? path : path.substr(pos + 1);
+    }
 
-std::string gpu_pci_bus_id(int gpu_id)
-{
-    char buf[64] = {};
-    if (cudaDeviceGetPCIBusId(buf, sizeof(buf), gpu_id) != cudaSuccess)
-        return "";
-    // Lowercase and ensure domain prefix
-    std::string s(buf);
-    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-    // Pad to "0000:xx:xx.x" if domain missing
-    if (s.size() == 7)
-        s = "0000:" + s;
-    return s;
-}
+    std::string gpu_pci_bus_id(int gpu_id)
+    {
+        char buf[64] = {};
+        if (cudaDeviceGetPCIBusId(buf, sizeof(buf), gpu_id) != cudaSuccess)
+            return "";
+        // Lowercase and ensure domain prefix
+        std::string s(buf);
+        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+        // Pad to "0000:xx:xx.x" if domain missing
+        if (s.size() == 7)
+            s = "0000:" + s;
+        return s;
+    }
 
 } // namespace probe_detail
 
@@ -190,11 +190,11 @@ std::vector<int> discover_gpus(const GpuConfig &gcfg)
                          "GPUDirect RDMA may not work correctly.");
         }
 
-        Logger::info("[GPU] [" + std::to_string(id) + "] " + std::string(prop.name) +
-                     "  cc=" + std::to_string(prop.major) + "." + std::to_string(prop.minor) +
-                     "  mem=" + std::to_string(prop.totalGlobalMem / (1 << 20)) + " MB" +
-                     "  PCIe=" + probe_detail::gpu_pci_bus_id(id) +
-                     "  NUMA=" + std::to_string(probe_detail::pci_numa_node(probe_detail::gpu_pci_bus_id(id))));
+        Logger::debug("[GPU] [" + std::to_string(id) + "] " + std::string(prop.name) +
+                      "  cc=" + std::to_string(prop.major) + "." + std::to_string(prop.minor) +
+                      "  mem=" + std::to_string(prop.totalGlobalMem / (1 << 20)) + " MB" +
+                      "  PCIe=" + probe_detail::gpu_pci_bus_id(id) +
+                      "  NUMA=" + std::to_string(probe_detail::pci_numa_node(probe_detail::gpu_pci_bus_id(id))));
 
         valid.push_back(id);
     }
@@ -310,7 +310,7 @@ std::vector<IbPortInfo> discover_ib_ports(const RdmaConfig &rcfg)
                 << "  LID=0x" << std::hex << pa.lid << std::dec
                 << "  PCIe=" << pci
                 << "  NUMA=" << numa;
-            Logger::info(oss.str());
+            Logger::debug(oss.str());
 
             if (pa.state == IBV_PORT_ACTIVE)
             {
@@ -383,9 +383,9 @@ std::vector<IbPortInfo> discover_ib_ports(const RdmaConfig &rcfg)
                      "%02x%02x:%02x%02x:%02x%02x:%02x%02x",
                      g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
                      g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
-            Logger::info("[IB] " + info.dev_name + " port " +
-                         std::to_string(info.port) + " GID[" +
-                         std::to_string(rcfg.gid_index) + "]=" + std::string(buf));
+            Logger::debug("[IB] " + info.dev_name + " port " +
+                          std::to_string(info.port) + " GID[" +
+                          std::to_string(rcfg.gid_index) + "]=" + std::string(buf));
         }
     }
 

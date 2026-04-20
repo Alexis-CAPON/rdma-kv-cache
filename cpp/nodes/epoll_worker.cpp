@@ -102,6 +102,7 @@ void EpollWorker::start()
     {
         Logger::error("Failed to set server listen socket non-blocking");
         close(epoll_fd_);
+        epoll_fd_ = -1;
         return;
     }
 
@@ -113,6 +114,7 @@ void EpollWorker::start()
     {
         Logger::error("epoll_ctl() failed for server listen socket: " + std::string(strerror(errno)));
         close(epoll_fd_);
+        epoll_fd_ = -1;
         return;
     }
 

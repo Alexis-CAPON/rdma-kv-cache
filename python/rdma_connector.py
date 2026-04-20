@@ -12,6 +12,7 @@
 
 import os
 from typing import TYPE_CHECKING, Any
+import node_accessor
 
 import torch
 
@@ -89,7 +90,8 @@ class RDMAConnector(ExampleConnector):
 
           # Initialize RDMA
           if RDMA_AVAILABLE:
-              self._rdma = rdma_bindings.RDMABindings()
+              engine_ptr = node_accessor.set_current_node(self._rdma)
+              self._rdma = rdma_bindings.RDMABindings(engine_ptr)  
               success = self._rdma.initialize(
                   self._rdma_device,
                   self._rdma_port,

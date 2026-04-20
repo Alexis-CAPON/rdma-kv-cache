@@ -475,25 +475,25 @@ void Worker::handle_broadcast_member_info(Message *msg)
                 }
             }
         }
-
-        // Connect to all QPs
-
-        if (!rdma_engine_.connect_all_qps())
-        {
-            Logger::error("Failed to connect QP with peer " + peer.node_id);
-        }
-
-        Logger::info("Successfully connected QP with peer " + peer.node_id);
-
-        // Send RDMA_READY message to orchestrator to indicate that we are ready for RDMA communication after we finish connecting to all the node with RDMA
-        auto ready_msg = Message::create_rdma_ready(node_info_.node_id);
-
-        send_server_response(epoll_worker_.get_orchestrator_fd(), ready_msg);
-
-        OrchestratorEngine::set_state(OrchestratorEngine::State::RUNNING);
-
-        Logger::debug("Sent RDMA_READY to orchestrator for node_id=" + node_info_.node_id);
     }
+
+    // Connect to all QPs
+
+    if (!rdma_engine_.connect_all_qps())
+    {
+        Logger::error("Failed to connect QP with peer " + peer.node_id);
+    }
+
+    Logger::info("Successfully connected QP with peer " + peer.node_id);
+
+    // Send RDMA_READY message to orchestrator to indicate that we are ready for RDMA communication after we finish connecting to all the node with RDMA
+    auto ready_msg = Message::create_rdma_ready(node_info_.node_id);
+
+    send_server_response(epoll_worker_.get_orchestrator_fd(), ready_msg);
+
+    OrchestratorEngine::set_state(OrchestratorEngine::State::RUNNING);
+
+    Logger::debug("Sent RDMA_READY to orchestrator for node_id=" + node_info_.node_id);
 }
 
 // ===========================================================================

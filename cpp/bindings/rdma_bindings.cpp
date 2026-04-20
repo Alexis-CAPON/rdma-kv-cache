@@ -12,9 +12,10 @@ namespace py = pybind11;
 class RDMABindings
 {
 public:
-    RDMABindings()
+    RDMABindings(RDMAEngine *existing_rdma_engine)
+        : rdma_engine_(existing_rdma_engine)
     {
-        LOG_INFO("RDMABindings initialized");
+        Logger::info("RDMABindings initialized");
     }
 
     ~RDMABindings()
@@ -25,7 +26,7 @@ public:
             if (region.mr)
             {
                 ibv_dereg_mr(region.mr);
-                LOG_DEBUG("Deregistered memory region: " + name);
+                Logger::debug("Deregistered memory region: " + name);
             }
         }
     }
@@ -53,19 +54,19 @@ public:
 
             if (!rdma_engine_->initialize())
             {
-                LOG_ERROR("RDMA engine initialization failed");
+                Logger::error("RDMA engine initialization failed");
                 return false;
             }
 
             // Store context for memory registration
             ctx_ = &rdma_engine_->get_context();
 
-            LOG_INFO("RDMA engine initialized successfully");
+            Logger::info("RDMA engine initialized successfully");
             return true;
         }
         catch (const std::exception &e)
         {
-            LOG_ERROR("RDMA initialization failed: " + std::string(e.what()));
+            Logger::error("RDMA initialization failed: " + std::string(e.what()));
             return false;
         }
     }
@@ -87,17 +88,13 @@ public:
         size_t size,
         const std::string &name = "unnamed")
     {
-        if (!ctx_ || !ctx_->pd)
-        {
-            LOG_ERROR("RDMA not initialized - call initialize() first");
-            return false;
-        }
+        RdmaContext &ctx = rdma_engine_->get_context();
 
         try
         {
             // Register memory with InfiniBand
             ibv_mr *mr = ibv_reg_mr(
-                ctx_->pd,
+                ctx.pd,
                 (void *)gpu_ptr,
                 size,
                 IBV_ACCESS_LOCAL_WRITE |
@@ -108,8 +105,8 @@ public:
 
             if (!mr)
             {
-                LOG_ERROR("ibv_reg_mr failed for " + name + ": " +
-                          std::string(strerror(errno)));
+                Logger::error("ibv_reg_mr failed for " + name + ": " +
+                              std::string(strerror(errno)));
                 return false;
             }
 
@@ -123,17 +120,17 @@ public:
 
             registered_regions_[name] = region;
 
-            LOG_INFO("Registered GPU memory '" + name + "': " +
-                     "ptr=0x" + std::to_string(gpu_ptr) +
-                     " size=" + std::to_string(size / (1024 * 1024)) + "MB " +
-                     "lkey=0x" + std::to_string(mr->lkey) +
-                     " rkey=0x" + std::to_string(mr->rkey));
+            Logger::info("Registered GPU memory '" + name + "': " +
+                         "ptr=0x" + std::to_string(gpu_ptr) +
+                         " size=" + std::to_string(size / (1024 * 1024)) + "MB " +
+                         "lkey=0x" + std::to_string(mr->lkey) +
+                         " rkey=0x" + std::to_string(mr->rkey));
 
             return true;
         }
         catch (const std::exception &e)
         {
-            LOG_ERROR("register_gpu_memory exception: " + std::string(e.what()));
+            Logger::error("register_gpu_memory exception: " + std::string(e.what()));
             return false;
         }
     }
@@ -151,7 +148,7 @@ public:
                 return region.lkey;
             }
         }
-        LOG_ERROR("No registered region contains ptr 0x" + std::to_string(gpu_ptr));
+        Logger::error("No registered region contains ptr 0x" + std::to_string(gpu_ptr));
         return 0;
     }
 
@@ -168,7 +165,7 @@ public:
     {
         if (!rdma_engine_)
         {
-            LOG_ERROR("RDMA engine not initialized");
+            Logger::error("RDMA engine not initialized");
             return false;
         }
 
@@ -176,8 +173,8 @@ public:
         uint32_t lkey = get_lkey_for_ptr(local_addr);
         if (lkey == 0)
         {
-            LOG_ERROR("Cannot RDMA write from unregistered memory 0x" +
-                      std::to_string(local_addr));
+            Logger::error("Cannot RDMA write from unregistered memory 0x" +
+                          std::to_string(local_addr));
             return false;
         }
 
@@ -187,7 +184,7 @@ public:
             std::string peer_id = find_peer_id_by_qp(qp_num);
             if (peer_id.empty())
             {
-                LOG_ERROR("No peer found for QP " + std::to_string(qp_num));
+                Logger::error("No peer found for QP " + std::to_string(qp_num));
                 return false;
             }
 
@@ -206,16 +203,16 @@ public:
 
             if (!success)
             {
-                LOG_ERROR("RDMA write failed");
+                Logger::error("RDMA write failed");
                 return false;
             }
 
-            LOG_DEBUG("RDMA write posted: " + std::to_string(size) + " bytes");
+            Logger::debug("RDMA write posted: " + std::to_string(size) + " bytes");
             return true;
         }
         catch (const std::exception &e)
         {
-            LOG_ERROR("RDMA write exception: " + std::string(e.what()));
+            Logger::error("RDMA write exception: " + std::string(e.what()));
             return false;
         }
     }
@@ -224,19 +221,19 @@ public:
     {
         if (!rdma_engine_)
         {
-            LOG_ERROR("RDMA engine not initialized");
+            Logger::error("RDMA engine not initialized");
             return false;
         }
 
         try
         {
             int completed = rdma_engine_->poll_send_cq(1);
-            LOG_DEBUG("RDMA operations completed: " + std::to_string(completed));
+            Logger::debug("RDMA operations completed: " + std::to_string(completed));
             return completed > 0;
         }
         catch (const std::exception &e)
         {
-            LOG_ERROR("RDMA wait exception: " + std::string(e.what()));
+            Logger::error("RDMA wait exception: " + std::string(e.what()));
             return false;
         }
     }
@@ -260,7 +257,7 @@ public:
     {
         if (!rdma_engine_)
         {
-            LOG_ERROR("RDMA engine not initialized");
+            Logger::error("RDMA engine not initialized");
             return 0;
         }
         return (uint64_t)rdma_engine_->get_gpu_ptr();
@@ -270,6 +267,7 @@ public:
     {
         if (!rdma_engine_)
         {
+            Logger::error("RDMA engine not initialized");
             return 0;
         }
         return rdma_engine_->get_memory_size();
@@ -285,7 +283,7 @@ private:
         uint32_t rkey;
     };
 
-    std::unique_ptr<RDMAEngine> rdma_engine_;
+    RDMAEngine *rdma_engine_;
     RdmaContext *ctx_ = nullptr;
     std::map<std::string, RegisteredRegion> registered_regions_;
 

@@ -83,6 +83,8 @@ public:
     uint32_t get_server_port() const { return config_.server_socket_port; }
     std::string get_hostname() const { return config_.hostname; }
 
+    RDMAEngine *get_rdma_engine() { return &rdma_engine_; }
+
 private:
     // Configuration
     Config config_;

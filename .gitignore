@@ -35,3 +35,19 @@
 *.DS_Store
 
 .vscode
+
+# Environment variables
+.env
+
+# Python virtual environment
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Build directories
+build/
+dist/
+logs/

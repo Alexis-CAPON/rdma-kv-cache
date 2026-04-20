@@ -91,12 +91,18 @@ bool Node::start()
     if (!epoll_worker_.connect_to_orchestrator(config_.orchestrator_host, config_.orchestrator_port))
     {
         Logger::error("Failed to connect to orchestrator");
+        rdma_engine_.shutdown();
+        epoll_worker_.stop();
+        worker_pool_.stop();
         return false;
     }
 
     if (!epoll_worker_.send_node_info_to_orchestrator())
     {
         Logger::error("Failed to send NodeInfo to orchestrator");
+        rdma_engine_.shutdown();
+        epoll_worker_.stop();
+        worker_pool_.stop();
         return false;
     }
 

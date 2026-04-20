@@ -17,6 +17,7 @@
 #include "cpp/common/config.h"
 #include <infiniband/verbs.h>
 #include <cuda_runtime.h>
+#include "cpp/common/logger.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -359,12 +360,13 @@ void alloc_and_register_gpu_mem(RdmaContext &ctx,
     ctx.mem.rkey = ctx.mem.mr->rkey;
     ctx.mem.addr = reinterpret_cast<uint64_t>(ctx.mem.d_ptr);
 
-    std::cout << "[MR] GPU" << gpu_id
-              << "  size=" << bytes / (1 << 20) << " MB"
-              << "  lkey=0x" << std::hex << ctx.mem.lkey
-              << "  rkey=0x" << ctx.mem.rkey
-              << "  d_ptr=0x" << ctx.mem.addr
-              << std::dec << "\n";
+    // Change with logger debug
+    Logger::debug("[MR] GPU" + std::to_string(gpu_id) +
+                  "  size=" + std::to_string(bytes / (1 << 20)) + " MB" +
+                  "  lkey=0x" + std::hex + std::to_string(ctx.mem.lkey) +
+                  "  rkey=0x" + std::hex + std::to_string(ctx.mem.rkey) +
+                  "  d_ptr=0x" + std::hex + std::to_string(ctx.mem.addr) +
+                  std::dec);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

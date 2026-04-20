@@ -75,6 +75,15 @@ public:
                     uint32_t imm_data,
                     bool signal);
 
+    bool post_write_external(
+        const std::string &peer_id,
+        uint64_t local_addr, // Absolute address (vLLM memory)
+        uint32_t local_lkey, // lkey from vLLM's MR
+        size_t dst_offset,
+        size_t length,
+        uint32_t imm_data,
+        bool signal);
+
     /**
      * Post receive WR for incoming WRITE_WITH_IMM
      * @param count Number of recv WRs to post
@@ -128,8 +137,8 @@ public:
     /**
      * Get RDMA context (for Python bindings memory registration)
      */
-    RdmaContext& get_context() { return rdma_ctx_; }
-    const RdmaContext& get_context() const { return rdma_ctx_; }
+    RdmaContext &get_context() { return rdma_ctx_; }
+    const RdmaContext &get_context() const { return rdma_ctx_; }
 
 private:
     // Configuration

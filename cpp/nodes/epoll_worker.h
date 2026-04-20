@@ -73,7 +73,7 @@ private:
     NodeInfo &node_info_;
     NodeRegistry &node_registry_;
 
-    int orchestrator_fd_; // File descriptor for orchestrator connection (if connected)
+    int orchestrator_fd_ = -1; // File descriptor for orchestrator connection (if connected)
 
     // Socket types
     enum SocketType
