@@ -66,10 +66,7 @@ public:
     uint32_t number_of_keys_hashtable;
     size_t size_local_buffer;
     size_t client_event_queue_size;
-    size_t monitoring_event_queue_size;
     uint32_t worker_pool_size;
-    uint32_t quorum_read_requirement;
-    uint32_t quorum_write_requirement;
     std::string orchestrator_host;
     uint32_t orchestrator_port;
     std::string orchestrator_id;
@@ -96,5 +93,4 @@ public:
     GpuConfig gpu;
 
     static Config fromFile(const std::string &path);
-    static Config fromArgs(int argc, char *argv[]);
 };

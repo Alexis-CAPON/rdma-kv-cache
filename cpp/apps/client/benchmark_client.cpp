@@ -309,7 +309,7 @@ void run_single_request(const std::string &host, int port, const std::string &pr
 }
 
 void run_throughput_benchmark(const std::string &host, int port, int num_requests,
-                               const std::string &prompt, int max_tokens)
+                              const std::string &prompt, int max_tokens)
 {
     Logger::info("Running throughput benchmark with " + std::to_string(num_requests) + " requests");
 

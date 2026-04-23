@@ -2,7 +2,10 @@
 #include "cpp/network/tcp_server.h"
 #include "cpp/nodes/event_queue.h"
 #include "cpp/nodes/worker_pool.h"
+#include "cpp/bindings/node_accessor.h"
 #include <csignal>
+#include <signal.h>
+#include <sys/wait.h>
 #include <stdexcept>
 #include <thread>
 #include <chrono>
@@ -18,7 +21,7 @@ Node::Node(Config config)
       server_tcp_server_(),
       event_queue_(config.orchestrator_event_queue_size),
       epoll_worker_(event_queue_, server_tcp_server_, node_info_),
-      worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id, node_info_, rdma_engine_),
+      worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id, node_info_, rdma_engine_, this),
       node_info_(),
       rdma_engine_(config_, node_info_)
 {
@@ -104,6 +107,8 @@ bool Node::start()
         return false;
     }
 
+    set_current_node(this);
+
     // ========================================
     // 5. Set State
     // ========================================
@@ -169,7 +174,6 @@ void Node::shutdown()
 
 bool Node::start_vllm_server()
 {
-    set_current_node(this);
 
     vllm_pid = fork();
     if (vllm_pid == 0)

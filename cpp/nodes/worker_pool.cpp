@@ -68,7 +68,8 @@ WorkerPool::WorkerPool(
     const Config &config,
     uint64_t node_id,
     NodeInfo &node_info,
-    RDMAEngine &rdma_engine)
+    RDMAEngine &rdma_engine,
+    Node *node_ptr)
     : num_workers_(num_workers),
       node_id_(node_id),
       running_(false),
@@ -77,7 +78,9 @@ WorkerPool::WorkerPool(
       epoll_worker_(epoll_worker),
       config_(config),
       node_info_(node_info),
-      rdma_engine_(rdma_engine)
+      rdma_engine_(rdma_engine),
+      node_ptr_(node_ptr)
+
 {
     Logger::info("WorkerPool initializing with " + std::to_string(num_workers_) + " workers");
 
@@ -107,7 +110,7 @@ WorkerPool::WorkerPool(
             &total_ops_,
             node_info_,
             rdma_engine_,
-            )); // Pass server-side operation counter
+            node_ptr_)); // Pass server-side operation counter
     }
 
     Logger::info("WorkerPool initialized with " + std::to_string(workers_.size()) + " Worker instances");

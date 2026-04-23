@@ -11,10 +11,12 @@
 
 std::atomic<bool> running{true};
 
+// Define and initialize the static member
+std::atomic<OrchestratorEngine::State> OrchestratorEngine::state_{OrchestratorEngine::State::STARTING};
+
 OrchestratorEngine::OrchestratorEngine(Config config)
     : config_(config),
       orchestrator_running_(false),
-      state_(State::STARTING),
       client_tcp_server_(),
       server_tcp_server_(),
       event_queue_(config.orchestrator_event_queue_size),

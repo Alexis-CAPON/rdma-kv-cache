@@ -188,12 +188,12 @@ bool RDMAEngine::post_write(const std::string &peer_id,
 
     try
     {
-        // Use the gpudirect_rdma post_rdma_write function
-        // We need to temporarily set the QP in rdma_ctx_ for the call
-        ibv_qp *saved_qp = rdma_ctx_.qp;
-        rdma_ctx_.qp = it->second;
+        // Create a thread-local context copy with the peer-specific QP
+        // This avoids mutating the shared rdma_ctx_.qp in a non-thread-safe way
+        RdmaContext peer_ctx = rdma_ctx_;
+        peer_ctx.qp = it->second;
 
-        post_rdma_write(rdma_ctx_,
+        post_rdma_write(peer_ctx,
                         src_offset,
                         dst_offset,
                         length,
@@ -201,9 +201,6 @@ bool RDMAEngine::post_write(const std::string &peer_id,
                         peer_info->remote_rkey,
                         imm_data,
                         signal);
-
-        // Restore original QP
-        rdma_ctx_.qp = saved_qp;
 
         return true;
     }

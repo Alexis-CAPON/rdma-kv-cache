@@ -64,17 +64,15 @@ public:
         STOPPED
     };
 
-    static std::atomic<State> state_;
-
     /**
      * Get current node state
      */
-    static State get_state() { return state_.load(); }
+    State get_state() const { return state_.load(); }
 
     /**
      * Set node state
      */
-    static void set_state(State state) { state_.store(state); }
+    void set_state(State new_state) { state_.store(new_state); }
 
     // ========================================
     // Accessors (for debugging/monitoring)
@@ -86,7 +84,7 @@ public:
     std::string get_hostname() const { return config_.hostname; }
 
     RDMAEngine *get_rdma_engine() { return &rdma_engine_; }
-    static bool start_vllm_server();
+    bool start_vllm_server();
 
 private:
     // Configuration
@@ -96,6 +94,7 @@ private:
 
     // State
     std::atomic<bool> running_;
+    std::atomic<State> state_;
 
     TCPServer server_tcp_server_; // For prefill/decode node connections (port from config.server_socket_port)
 

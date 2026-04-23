@@ -15,6 +15,7 @@
 #include "cpp/rdma/rdma_engine.h"
 #include "cpp/apps/orchestrator/request_tracker.h"
 #include "cpp/apps/orchestrator/request_router.h"
+#include "cpp/nodes/node.h"
 
 class Worker
 {
@@ -27,7 +28,8 @@ public:
         uint64_t node_id,
         std::atomic<uint64_t> *server_ops_counter = nullptr,
         NodeInfo &node_info,
-        RDMAEngine &rdma_engine);
+        RDMAEngine &rdma_engine,
+        Node *node_ptr = nullptr);
 
     // Instance for Orchestrator
     Worker(
@@ -64,6 +66,8 @@ private:
     RdmaExchangeTracker rdma_exchange_tracker_;               // Only used by orchestrator worker
     RequestTrackerOrchestrator request_tracker_orchestrator_; // Only used by orchestrator worker
     RequestRouter request_router_;                            // Only used by orchestrator worker
+
+    Node *node_ptr_; // Only used by prefill/decode workers (for vLLM server management)
 
     // Shared server-side operation counter (for throughput tracking)
     std::atomic<uint64_t> *server_ops_counter_;

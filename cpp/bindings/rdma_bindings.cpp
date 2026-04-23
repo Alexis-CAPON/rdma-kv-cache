@@ -284,12 +284,9 @@ PYBIND11_MODULE(rdma_bindings, m)
     m.doc() = "Python bindings for C++ RDMA engine (GPUDirect RDMA)";
 
     py::class_<RDMABindings>(m, "RDMABindings")
-        .def(py::init<>())
-        .def("initialize", &RDMABindings::initialize,
-             py::arg("device_name"),
-             py::arg("port") = 1,
-             py::arg("gid_index") = 0,
-             "Initialize RDMA engine")
+        .def(py::init<RDMAEngine *>(),
+             py::arg("rdma_engine"),
+             "Initialize with existing RDMAEngine instance")
         .def("register_gpu_memory", &RDMABindings::register_gpu_memory,
              py::arg("gpu_ptr"),
              py::arg("size"),

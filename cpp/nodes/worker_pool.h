@@ -13,6 +13,7 @@
 #include "cpp/apps/orchestrator/rdma_exchange_tracker.h"
 #include "cpp/apps/orchestrator/request_tracker.h"
 #include "cpp/apps/orchestrator/request_router.h"
+#include "cpp/nodes/node.h"
 
 #include "cpp/rdma/rdma_engine.h"
 #include "cpp/common/types.h"
@@ -28,7 +29,8 @@ public:
         const Config &config,
         uint64_t node_id,
         NodeInfo &node_info,
-        RDMAEngine &rdma_engine);
+        RDMAEngine &rdma_engine,
+        Node *node_ptr);
 
     // Constructor for orchestrator node
     WorkerPool(
@@ -71,6 +73,7 @@ private:
 
     NodeInfo &node_info_;     // only used by prefill/decode workers
     RDMAEngine &rdma_engine_; // only used by prefill/decode workers
+    Node *node_ptr_;          // only used by prefill/decode workers (for vLLM server management)
 
     EpollWorker &epoll_worker_;
     Config config_;

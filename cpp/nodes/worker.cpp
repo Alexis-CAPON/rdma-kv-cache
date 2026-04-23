@@ -17,12 +17,14 @@ Worker::Worker(
     uint64_t node_id,
     std::atomic<uint64_t> *server_ops_counter,
     NodeInfo &node_info,
-    RDMAEngine &rdma_engine)
+    RDMAEngine &rdma_engine,
+    Node *node_ptr)
     : worker_id_(worker_id),
       node_id_(node_id),
       epoll_worker_(epoll_worker),
       config_(config),
       server_ops_counter_(server_ops_counter),
+      node_ptr_(node_ptr),
       node_info_(node_info),
       rdma_engine_(rdma_engine),
       events_processed_(0)
@@ -487,14 +489,14 @@ void Worker::handle_broadcast_member_info(Message *msg)
 
     // Start VLLM Server
 
-    Node::start_vllm_server();
+    node_ptr_->start_vllm_server();
 
     // Send RDMA_READY message to orchestrator to indicate that we are ready for RDMA communication after we finish connecting to all the node with RDMA
     auto ready_msg = Message::create_rdma_ready(node_info_.node_id);
 
     send_server_response(epoll_worker_.get_orchestrator_fd(), ready_msg);
 
-    Node::set_state(Node::State::RUNNING);
+    node_ptr_->set_state(Node::State::RUNNING);
 
     Logger::debug("Sent RDMA_READY to orchestrator for node_id=" + node_info_.node_id);
 }
