@@ -51,8 +51,8 @@ struct Message
     static Message create_client_response(const std::string source_node_id, const RequestInfo &request_info, const std::string &response_text);
 
     static Message create_error(const std::string &error_msg);
-
-    // Serialization functions
-    std::vector<uint8_t> serialize_message(const Message &message);
-    std::unique_ptr<Message> deserialize_message(const std::vector<uint8_t> &data);
 };
+
+// Serialization functions (free functions so callers don't need a Message instance)
+std::vector<uint8_t> serialize_message(const Message &message);
+std::unique_ptr<Message> deserialize_message(const std::vector<uint8_t> &data);
