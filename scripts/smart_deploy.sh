@@ -11,26 +11,95 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/deploy_config.sh"
 
 # ============================================
-# Configuration
+# Interactive Configuration
 # ============================================
 
-NUM_NODES="${1:-5}"  # Default: 1 orchestrator + 2 prefill + 2 decode
+echo ""
+log_info "=========================================="
+log_info "Disaggregated LLM System - Deployment Setup"
+log_info "=========================================="
+echo ""
 
-if [ $NUM_NODES -gt ${#CLOUDLAB_NODES[@]} ]; then
-    log_error "Requested $NUM_NODES nodes, but only ${#CLOUDLAB_NODES[@]} available"
+# Show available nodes
+log_info "Available CloudLab nodes:"
+for i in "${!CLOUDLAB_NODES[@]}"; do
+    echo "  [$i] ${CLOUDLAB_NODES[$i]}"
+done
+echo ""
+
+# Get number of prefill nodes
+if [ -z "$1" ]; then
+    read -p "$(echo -e "${COLOR_CYAN}Number of prefill nodes [default: 2]: ${COLOR_RESET}")" NUM_PREFILL_NODES
+    NUM_PREFILL_NODES=${NUM_PREFILL_NODES:-2}
+else
+    NUM_PREFILL_NODES=$1
+fi
+
+# Get number of decode nodes
+if [ -z "$2" ]; then
+    read -p "$(echo -e "${COLOR_CYAN}Number of decode nodes [default: 2]: ${COLOR_RESET}")" NUM_DECODE_NODES
+    NUM_DECODE_NODES=${NUM_DECODE_NODES:-2}
+else
+    NUM_DECODE_NODES=$2
+fi
+
+# Calculate total nodes needed
+TOTAL_NODES=$((1 + NUM_PREFILL_NODES + NUM_DECODE_NODES))
+
+# Validate we have enough nodes
+if [ $TOTAL_NODES -gt ${#CLOUDLAB_NODES[@]} ]; then
+    log_error "Not enough CloudLab nodes. Need $TOTAL_NODES (1 orchestrator + $NUM_PREFILL_NODES prefill + $NUM_DECODE_NODES decode), have ${#CLOUDLAB_NODES[@]}"
     exit 1
 fi
 
-DEPLOY_NODES=("${CLOUDLAB_NODES[@]:0:$NUM_NODES}")
+# Assign nodes
+ORCHESTRATOR_NODE="${CLOUDLAB_NODES[0]}"
+PREFILL_NODES=("${CLOUDLAB_NODES[@]:1:$NUM_PREFILL_NODES}")
+DECODE_NODES=("${CLOUDLAB_NODES[@]:$((1+NUM_PREFILL_NODES)):$NUM_DECODE_NODES}")
 
-log_info "=========================================="
-log_info "Deploying Disaggregated LLM System"
-log_info "=========================================="
+DEPLOY_NODES=("${CLOUDLAB_NODES[@]:0:$TOTAL_NODES}")
+
 echo ""
-log_info "Deploying to ${NUM_NODES} nodes:"
-for i in "${!DEPLOY_NODES[@]}"; do
-    echo "  [$i] ${DEPLOY_NODES[$i]}"
+log_info "Deployment Configuration:"
+echo "  Orchestrator: ${ORCHESTRATOR_NODE}"
+echo "  Prefill nodes (${NUM_PREFILL_NODES}):"
+for i in "${!PREFILL_NODES[@]}"; do
+    echo "    [prefill-$(printf '%02d' $i)] ${PREFILL_NODES[$i]}"
 done
+echo "  Decode nodes (${NUM_DECODE_NODES}):"
+for i in "${!DECODE_NODES[@]}"; do
+    echo "    [decode-$(printf '%02d' $i)] ${DECODE_NODES[$i]}"
+done
+echo ""
+
+# Confirm deployment
+if [ -z "$3" ]; then
+    read -p "$(echo -e "${COLOR_YELLOW}Proceed with deployment? [y/N]: ${COLOR_RESET}")" CONFIRM
+    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+        log_warning "Deployment cancelled"
+        exit 0
+    fi
+else
+    log_info "Auto-confirming deployment (non-interactive mode)"
+fi
+
+echo ""
+
+# ============================================
+# Step 0: Generate Configuration Files
+# ============================================
+
+log_step "Generating YAML configuration files..."
+
+"${SCRIPT_DIR}/generate_configs.sh" $NUM_PREFILL_NODES $NUM_DECODE_NODES
+
+if [ $? -eq 0 ]; then
+    log_success "Configuration files generated"
+else
+    log_error "Failed to generate configuration files"
+    exit 1
+fi
+
 echo ""
 
 # ============================================
@@ -63,7 +132,7 @@ fi
 # Step 2: Sync Code to Remote Nodes
 # ============================================
 
-log_step "Syncing code to remote nodes..."
+log_step "Syncing code and configs to remote nodes..."
 
 SYNC_PIDS=()
 
@@ -74,7 +143,7 @@ for NODE in "${DEPLOY_NODES[@]}"; do
 
     # Create remote directory
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "mkdir -p ${REMOTE_DIR}" &
+        "mkdir -p ${REMOTE_DIR} ${REMOTE_DIR}/configs" &
 
     SYNC_PIDS+=($!)
 done
@@ -103,7 +172,7 @@ for pid in "${RSYNC_PIDS[@]}"; do
     wait $pid
 done
 
-log_success "Code synced to all nodes"
+log_success "Code and configs synced to all nodes"
 echo ""
 
 # ============================================

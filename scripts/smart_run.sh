@@ -101,14 +101,10 @@ for i in "${!PREFILL_NODES[@]}"; do
     # Give vLLM time to start
     sleep 5
 
-    # Start C++ prefill node
+    # Start C++ prefill node with node-specific config
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && \
-        nohup ./build/bin/prefill_node --config configs/prefill_node.yaml \
-            --node-id ${NODE_ID} \
-            --tcp-port ${NODE_TCP_PORT} \
-            --vllm-port ${VLLM_PORT} \
-            --orchestrator ${ORCHESTRATOR_HOST}:${ORCHESTRATOR_PORT} \
+        nohup ./build/bin/prefill_node --config configs/${NODE_ID}.yaml \
             > logs/${NODE_ID}-node.log 2>&1 < /dev/null &"
 
     sleep 2
@@ -162,14 +158,10 @@ for i in "${!DECODE_NODES[@]}"; do
     # Give vLLM time to start
     sleep 5
 
-    # Start C++ decode node
+    # Start C++ decode node with node-specific config
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && \
-        nohup ./build/bin/decode_node --config configs/decode_node.yaml \
-            --node-id ${NODE_ID} \
-            --tcp-port ${NODE_TCP_PORT} \
-            --vllm-port ${VLLM_PORT} \
-            --orchestrator ${ORCHESTRATOR_HOST}:${ORCHESTRATOR_PORT} \
+        nohup ./build/bin/decode_node --config configs/${NODE_ID}.yaml \
             > logs/${NODE_ID}-node.log 2>&1 < /dev/null &"
 
     sleep 2
