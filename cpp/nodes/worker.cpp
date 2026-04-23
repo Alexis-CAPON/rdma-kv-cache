@@ -74,7 +74,6 @@ void Worker::process_event(Event &event)
     case MessageType::CLIENT_REQUEST:
         handle_client_request(event.client_fd, event.message.get());
         break;
-
         // Orchestrator
 
     case MessageType::ASSIGN_REQUEST:
@@ -481,10 +480,10 @@ void Worker::handle_broadcast_member_info(Message *msg)
 
     if (!rdma_engine_.connect_all_qps())
     {
-        Logger::error("Failed to connect QP with peer " + peer.node_id);
+        Logger::error("Failed to connect QP with peers");
     }
 
-    Logger::info("Successfully connected QP with peer " + peer.node_id);
+    Logger::info("Successfully connected QP with peers");
 
     // Start VLLM Server
 
@@ -495,7 +494,7 @@ void Worker::handle_broadcast_member_info(Message *msg)
 
     send_server_response(epoll_worker_.get_orchestrator_fd(), ready_msg);
 
-    OrchestratorEngine::set_state(OrchestratorEngine::State::RUNNING);
+    Node::set_state(Node::State::RUNNING);
 
     Logger::debug("Sent RDMA_READY to orchestrator for node_id=" + node_info_.node_id);
 }

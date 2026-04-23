@@ -28,7 +28,7 @@
 class EpollWorker
 {
 public:
-    EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server);
+    EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server, NodeRegistry &node_registry);
     EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server, NodeInfo &node_info);
     ~EpollWorker();
 

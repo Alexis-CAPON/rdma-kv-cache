@@ -64,7 +64,7 @@ public:
     /**
      * Check if orchestrator is running
      */
-    bool is_running() const { return running_; }
+    bool is_running() const { return orchestrator_running_; }
 
     // ========================================
     // State
@@ -79,6 +79,8 @@ public:
         RUNNING,           // Accepting client requests
         STOPPED
     };
+
+    static std::atomic<State> state_;
 
     /**
      * Get current orchestrator state
@@ -104,8 +106,7 @@ private:
     Config config_;
 
     // State
-    std::atomic<bool> running_;
-    std::atomic<State> state_;
+    std::atomic<bool> orchestrator_running_;
 
     // TCP Servers
     TCPServer client_tcp_server_; // For client connections (port from config.client_socket_port)

@@ -11,7 +11,7 @@
 #include "cpp/common/types.h"
 
 // Constructor for Orchestrator
-EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server, NodeInfo &node_info, NodeRegistry &node_registry)
+EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server, NodeRegistry &node_registry)
     : running_(false),
       event_queue_(eventqueue),
       client_tcp_server_(client_tcp_server),
@@ -28,7 +28,6 @@ EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, T
 EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server, NodeInfo &node_info)
     : running_(false),
       event_queue_(eventqueue),
-      client_tcp_server_(nullptr),
       server_tcp_server_(server_tcp_server),
       node_info_(node_info),
       epoll_fd_(-1)
@@ -296,7 +295,7 @@ void EpollWorker::handle_server_accept()
             break;
         }
 
-        if (node_info_.role != nullptr && (node_info_.role == NodeRole::PREFILL || node_info_.role == NodeRole::DECODE))
+        if (node_info_.role == NodeRole::PREFILL || node_info_.role == NodeRole::DECODE)
         {
             // We add the connection to the NodeInfo
             node_info_.node_other_node_fd.push_back({new_conn->get_node_host(), new_conn->get_fd()});

@@ -3,7 +3,7 @@
 #include <vector>
 #include <string>
 
-uint64_t Config::generate_node_id(const std::string &host, uint16_t port)
+std::string Config::generate_node_id(const std::string &host, uint16_t port)
 {
     std::string key = host;
 
@@ -15,12 +15,12 @@ uint64_t Config::generate_node_id(const std::string &host, uint16_t port)
         hash *= 1099511628211ULL;
     }
 
-    return hash;
+    return std::to_string(hash);
 }
 
 static void validate(const Config &config)
 {
-    if (config.node_id <= 0)
+    if (config.node_id.empty())
         throw std::runtime_error("node_id must be positive");
 
     if (config.hostname.empty())
@@ -53,9 +53,9 @@ Config Config::fromFile(const std::string &path)
     config.monitoring_event_queue_size = yaml["event_queue_size"] ? yaml["event_queue_size"].as<size_t>() : 1000;
     config.worker_pool_size = yaml["worker_pool_size"] ? yaml["worker_pool_size"].as<uint32_t>() : 4;
 
-    config.monitoring_host = yaml["monitoring_host"].as<std::string>();
-    config.monitoring_port = yaml["monitoring_port"].as<int>();
-    config.orchestrator_id = generate_node_id(config.monitoring_host, config.monitoring_port);
+    config.orchestrator_host = yaml["orchestrator_host"].as<std::string>();
+    config.orchestrator_port = yaml["orchestrator_port"].as<int>();
+    config.orchestrator_id = generate_node_id(config.orchestrator_host, config.orchestrator_port);
 
     config.num_layers = yaml["num_layers"] ? yaml["num_layers"].as<uint32_t>() : 12;
 
@@ -114,6 +114,26 @@ Config Config::fromFile(const std::string &path)
         p.server_socket_port = peer["server_socket_port"].as<uint32_t>();
         p.node_id = generate_node_id(p.hostname, p.client_socket_port);
         config.peers.push_back(p);
+    }
+
+    for (const auto &prefill_node : yaml["prefill_nodes"])
+    {
+        PeerConfig p;
+        p.hostname = prefill_node["host"].as<std::string>();
+        p.client_socket_port = prefill_node["client_socket_port"].as<uint32_t>();
+        p.server_socket_port = prefill_node["server_socket_port"].as<uint32_t>();
+        p.node_id = generate_node_id(p.hostname, p.client_socket_port);
+        config.prefill_nodes.push_back(p);
+    }
+
+    for (const auto &decode_node : yaml["decode_nodes"])
+    {
+        PeerConfig p;
+        p.hostname = decode_node["host"].as<std::string>();
+        p.client_socket_port = decode_node["client_socket_port"].as<uint32_t>();
+        p.server_socket_port = decode_node["server_socket_port"].as<uint32_t>();
+        p.node_id = generate_node_id(p.hostname, p.client_socket_port);
+        config.decode_nodes.push_back(p);
     }
 
     validate(config);

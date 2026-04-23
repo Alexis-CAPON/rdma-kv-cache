@@ -72,17 +72,18 @@ bool RDMAEngine::initialize()
         if (node_info_.role == NodeRole::PREFILL)
         {
             // Prefill node connects to all decode nodes
-            for (int i = 1; i <= config_.expected_decode_nodes; ++i)
+            // We need to use the config to determine how many decode nodes to expect
+            for (auto &peer : config_.decode_nodes)
             {
-                expected_peers.push_back("decode-" + std::to_string(i));
+                expected_peers.push_back(peer.node_id);
             }
         }
         else if (node_info_.role == NodeRole::DECODE)
         {
             // Decode node connects to all prefill nodes
-            for (int i = 1; i <= config_.expected_prefill_nodes; ++i)
+            for (auto &peer : config_.prefill_nodes)
             {
-                expected_peers.push_back("prefill-" + std::to_string(i));
+                expected_peers.push_back(peer.node_id);
             }
         }
 

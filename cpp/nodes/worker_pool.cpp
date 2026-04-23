@@ -8,18 +8,41 @@ WorkerPool::WorkerPool(
     EventQueue &event_queue,
     EpollWorker &epoll_worker,
     const Config &config,
-    uint64_t node_id)
+    uint64_t node_id,
+    NodeRegistry &node_registry,
+    RdmaExchangeTracker &rdma_exchange_tracker,
+    RequestTrackerOrchestrator &request_tracker_orchestrator,
+    RequestRouter &request_router)
     : num_workers_(num_workers),
       node_id_(node_id),
       running_(false),
       total_ops_(0),
       event_queue_(event_queue),
       epoll_worker_(epoll_worker),
-      config_(config)
+      config_(config),
+      node_registry_(node_registry),
+      rdma_exchange_tracker_(rdma_exchange_tracker),
+      request_tracker_orchestrator_(request_tracker_orchestrator),
+      request_router_(request_router)
 {
     Logger::info("WorkerPool initializing with " + std::to_string(num_workers_) + " workers");
 
     // Pre-create Worker instances (one per thread)
+
+    /*
+    // Instance for Orchestrator
+    Worker(
+        uint32_t worker_id,
+        EpollWorker &epoll_worker,
+        const Config &config,
+        uint64_t node_id,
+        std::atomic<uint64_t> *server_ops_counter = nullptr,
+        NodeRegistry &node_registry,
+        RdmaExchangeTracker &rdma_exchange_tracker,
+        RequestTrackerOrchestrator &request_tracker_orchestrator,
+        RequestRouter &request_router);
+*/
+
     workers_.reserve(num_workers_);
     for (uint32_t i = 0; i < num_workers_; i++)
     {
@@ -28,7 +51,63 @@ WorkerPool::WorkerPool(
             epoll_worker_,
             config_,
             node_id_,
-            &total_ops_)); // Pass server-side operation counter
+            &total_ops_,
+            node_registry_,
+            rdma_exchange_tracker_,
+            request_tracker_orchestrator_,
+            request_router_)); // Pass server-side operation counter
+    }
+
+    Logger::info("WorkerPool initialized with " + std::to_string(workers_.size()) + " Worker instances");
+}
+
+WorkerPool::WorkerPool(
+    uint32_t num_workers,
+    EventQueue &event_queue,
+    EpollWorker &epoll_worker,
+    const Config &config,
+    uint64_t node_id,
+    NodeInfo &node_info,
+    RDMAEngine &rdma_engine)
+    : num_workers_(num_workers),
+      node_id_(node_id),
+      running_(false),
+      total_ops_(0),
+      event_queue_(event_queue),
+      epoll_worker_(epoll_worker),
+      config_(config),
+      node_info_(node_info),
+      rdma_engine_(rdma_engine)
+{
+    Logger::info("WorkerPool initializing with " + std::to_string(num_workers_) + " workers");
+
+    // Pre-create Worker instances (one per thread)
+
+    /*
+
+        // Instance for prefill/decode nodes
+    Worker(
+        uint32_t worker_id,
+        EpollWorker &epoll_worker,
+        const Config &config,
+        uint64_t node_id,
+        std::atomic<uint64_t> *server_ops_counter = nullptr,
+        NodeInfo &node_info,
+        RDMAEngine &rdma_engine);
+*/
+
+    workers_.reserve(num_workers_);
+    for (uint32_t i = 0; i < num_workers_; i++)
+    {
+        workers_.push_back(std::make_unique<Worker>(
+            i, // worker_id
+            epoll_worker_,
+            config_,
+            node_id_,
+            &total_ops_,
+            node_info_,
+            rdma_engine_,
+            )); // Pass server-side operation counter
     }
 
     Logger::info("WorkerPool initialized with " + std::to_string(workers_.size()) + " Worker instances");

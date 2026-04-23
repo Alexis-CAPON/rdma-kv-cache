@@ -5,7 +5,7 @@
 
 struct PeerConfig
 {
-    uint64_t node_id;
+    std::string node_id;
     std::string hostname;
     uint32_t client_socket_port;
     uint32_t server_socket_port;
@@ -56,8 +56,8 @@ struct GpuConfig
 class Config
 {
 public:
-    static uint64_t generate_node_id(const std::string &host, uint16_t port);
-    uint64_t node_id;
+    static std::string generate_node_id(const std::string &host, uint16_t port);
+    std::string node_id;
     uint32_t client_socket_port;
     uint32_t server_socket_port;
     std::string hostname;
@@ -70,9 +70,12 @@ public:
     uint32_t worker_pool_size;
     uint32_t quorum_read_requirement;
     uint32_t quorum_write_requirement;
-    std::string monitoring_host;
-    uint32_t monitoring_port;
+    std::string orchestrator_host;
+    uint32_t orchestrator_port;
     std::string orchestrator_id;
+    uint32_t vllm_port;
+    std::string model_name;
+
     uint32_t num_layers;
 
     std::string role;
@@ -81,6 +84,9 @@ public:
 
     int expected_decode_nodes;
     int expected_prefill_nodes;
+
+    std::vector<PeerConfig> prefill_nodes;
+    std::vector<PeerConfig> decode_nodes;
 
     std::vector<PeerConfig> peers;
 

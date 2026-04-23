@@ -13,7 +13,7 @@ std::atomic<bool> running{true};
 
 OrchestratorEngine::OrchestratorEngine(Config config)
     : config_(config),
-      running_(false),
+      orchestrator_running_(false),
       state_(State::STARTING),
       client_tcp_server_(),
       server_tcp_server_(),
@@ -22,8 +22,8 @@ OrchestratorEngine::OrchestratorEngine(Config config)
       request_router_(node_registry_, RequestRouter::RoutingPolicy::LEAST_LOADED),
       request_tracker_(),
       rdma_exchange_tracker_(config.expected_prefill_nodes, config.expected_decode_nodes),
-      epoll_worker_(event_queue_, client_tcp_server_, server_tcp_server_),
-      worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id)
+      epoll_worker_(event_queue_, client_tcp_server_, server_tcp_server_, node_registry_),
+      worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id, node_registry_, rdma_exchange_tracker_, request_tracker_, request_router_)
 {
     Logger::info("Initializing Orchestrator: " + config.hostname + ":" +
                  std::to_string(config.client_socket_port) + " (client), :" +
@@ -93,7 +93,7 @@ bool OrchestratorEngine::start()
     // ========================================
 
     state_.store(State::WAITING_FOR_NODES);
-    running_ = true;
+    orchestrator_running_ = true;
 
     Logger::info("========================================");
     Logger::info("Orchestrator ONLINE");
@@ -107,7 +107,7 @@ bool OrchestratorEngine::start()
 
 void OrchestratorEngine::shutdown()
 {
-    if (!running_)
+    if (!orchestrator_running_)
     {
         Logger::warning("Orchestrator already stopped");
         return;
@@ -131,7 +131,7 @@ void OrchestratorEngine::shutdown()
     Logger::info("Stopping WorkerPool...");
     worker_pool_.stop();
 
-    running_ = false;
+    orchestrator_running_ = false;
 
     // Print final statistics
     auto stats = rdma_exchange_tracker_.get_stats();

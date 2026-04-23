@@ -127,6 +127,7 @@ add_executable(orchestrator
     apps/orchestrator/node_registry.cpp
     apps/orchestrator/request_tracker.cpp
     apps/orchestrator/request_router.cpp
+    apps/orchestrator/rdma_exchange_tracker.cpp
 )
 
 target_link_libraries(orchestrator

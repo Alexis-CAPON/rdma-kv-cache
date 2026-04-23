@@ -18,7 +18,7 @@ Node::Node(Config config)
       server_tcp_server_(),
       event_queue_(config.orchestrator_event_queue_size),
       epoll_worker_(event_queue_, server_tcp_server_, node_info_),
-      worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id),
+      worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id, node_info_, rdma_engine_),
       node_info_(),
       rdma_engine_(config_, node_info_)
 {
@@ -52,8 +52,6 @@ bool Node::start()
         Logger::error("Failed to listen on server TCP server");
         return false;
     }
-
-    node_info_.node_listen_socket_fd = server_tcp_server_.get_fd();
 
     // ========================================
     // 2. Start EpollWorker (I/O Thread)
@@ -182,9 +180,9 @@ bool Node::start_vllm_server()
                           config_.model_name + " "
                                                "--kv-transfer-config " +
                           std::to_string(config_.size_local_buffer) + "," +
-                          std::to_string(config_.num_kv_chunks) + "," +
-                          std::to_string(config_.chunk_size_mb) + " "
-                                                                  "--port " +
+                          std::to_string(config_.memory.kv_buffer_mb) + "," +
+                          std::to_string(config_.memory.chunk_size_mb) + " "
+                                                                         "--port " +
                           std::to_string(config_.vllm_port) + " ";
 
         execl("/bin/sh", "sh", "-c", cmd.c_str(), (char *)NULL);

@@ -9,6 +9,13 @@ struct KVMetaData
     uint32_t num_tokens;
 };
 
+enum class NodeRole
+{
+    ORCHESTRATOR,
+    PREFILL,
+    DECODE
+};
+
 struct PeerInfoandQPs
 {
     std::string peer_node_id; // Who this QP is for
@@ -34,10 +41,10 @@ struct NodeInfo
     std::string node_id;
     NodeRole role;
     std::string ip_address;
-    uint16_t tcp_port;                                // For orchestrator communication
-    int node_own_orchestrator_fd;                     // TCP connection fd to orchestrator (if connected)
-    std::vector<std::string, int> node_other_node_fd; // TCP connection fd to other node (if connected)
-    uint16_t vllm_port;                               // vLLM HTTP port
+    uint16_t tcp_port;                                           // For orchestrator communication
+    int node_own_orchestrator_fd;                                // TCP connection fd to orchestrator (if connected)
+    std::vector<std::pair<std::string, int>> node_other_node_fd; // TCP connection fd to other node (if connected)
+    uint16_t vllm_port;                                          // vLLM HTTP port
     bool is_healthy;
 
     // ── GPUDirect RDMA Device Info ───────────────────────────────────────────────
@@ -81,13 +88,6 @@ struct KVLayerMetadata
 };
 
 // RDMA connection info for QP exchange
-
-enum class NodeRole
-{
-    ORCHESTRATOR,
-    PREFILL,
-    DECODE
-};
 
 enum class MessageType
 {

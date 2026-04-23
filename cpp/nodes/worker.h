@@ -76,8 +76,6 @@ private:
     // ========================================
     // Only orchestrator nodes
     void handle_client_request(int client_fd, Message *msg);
-    void handle_client_response(int client_fd, Message *msg);
-    void handle_client_error(int client_fd, Message *msg);
 
     // Only orchestrator nodes
     void handle_assign_request(int server_fd, Message *msg);
@@ -87,7 +85,6 @@ private:
     void handle_decode_complete(int server_fd, Message *msg);
 
     // Only prefill / decode nodes
-    void handle_node_rdma_registration_complete(int server_fd, Message *msg);
     void handle_request_failed(int server_fd, Message *msg);
     void handle_broadcast_member_info(Message *msg);
 
