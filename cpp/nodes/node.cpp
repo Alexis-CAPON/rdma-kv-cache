@@ -4,9 +4,12 @@
 #include "cpp/nodes/worker_pool.h"
 #include "cpp/bindings/node_accessor.h"
 #include <csignal>
-#include <cstdio>
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #include <stdexcept>
 #include <thread>
 #include <chrono>
@@ -207,26 +210,33 @@ bool Node::start_vllm_server()
         std::string mooncake_cfg_path = "/tmp/mooncake-" + config_.role + "-" +
                                         std::to_string(config_.client_socket_port) + ".json";
 
+        // Use the first configured IB device, falling back to "mlx5_0"
+        std::string rdma_device = config_.rdma.ib_devices.empty() ? "mlx5_0" : config_.rdma.ib_devices[0];
+
         std::string mooncake_cfg_content =
             "{\n"
             "  \"local_hostname\": \"" + config_.hostname + "\",\n"
             "  \"metadata_server\": \"" + config_.orchestrator_host + ":2379\",\n"
             "  \"protocol\": \"rdma\",\n"
-            "  \"rdma_devices\": [\"mlx5_0\"],\n"
+            "  \"rdma_devices\": [\"" + rdma_device + "\"],\n"
             "  \"use_gpu_direct\": false\n"
             "}\n";
 
-        // Write mooncake config to a temp file before forking
+        // Write mooncake config to a temp file before forking (mode 0600 for security)
         {
-            FILE *f = fopen(mooncake_cfg_path.c_str(), "w");
-            if (f)
+            int fd = open(mooncake_cfg_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+            if (fd < 0)
             {
-                fputs(mooncake_cfg_content.c_str(), f);
-                fclose(f);
+                Logger::error("Failed to create Mooncake config at " + mooncake_cfg_path +
+                              ": " + std::strerror(errno));
+                return false;
             }
-            else
+            ssize_t written = write(fd, mooncake_cfg_content.c_str(), mooncake_cfg_content.size());
+            close(fd);
+            if (written < 0 || static_cast<size_t>(written) != mooncake_cfg_content.size())
             {
-                Logger::error("Failed to write Mooncake config to " + mooncake_cfg_path);
+                Logger::error("Failed to write Mooncake config to " + mooncake_cfg_path +
+                              ": " + std::strerror(errno));
                 return false;
             }
         }
