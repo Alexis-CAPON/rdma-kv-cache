@@ -27,7 +27,7 @@ public:
         EventQueue &event_queue,
         EpollWorker &epoll_worker,
         const Config &config,
-        uint64_t node_id,
+        const std::string &node_id,
         NodeInfo &node_info,
         RDMAEngine &rdma_engine,
         Node *node_ptr);
@@ -38,7 +38,7 @@ public:
         EventQueue &event_queue,
         EpollWorker &epoll_worker,
         const Config &config,
-        uint64_t node_id,
+        const std::string &node_id,
         NodeRegistry &node_registry,
         RdmaExchangeTracker &rdma_exchange_tracker,
         RequestTrackerOrchestrator &request_tracker_orchestrator,
@@ -58,7 +58,7 @@ public:
 private:
     // Configuration
     uint32_t num_workers_;
-    uint64_t node_id_;
+    std::string node_id_;
     std::atomic<bool> running_;
 
     // Server-side operation counter for throughput tracking

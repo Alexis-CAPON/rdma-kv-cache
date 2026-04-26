@@ -17,7 +17,8 @@ EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, T
       client_tcp_server_(client_tcp_server),
       server_tcp_server_(server_tcp_server),
       epoll_fd_(-1),
-      node_registry_(node_registry)
+      node_registry_(node_registry),
+      has_client_tcp_server_(true)
 
 {
     Logger::info("EpollWorker initialized with client TCP server on port " + std::to_string(client_tcp_server_.get_fd()) +
@@ -30,7 +31,8 @@ EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server, N
       event_queue_(eventqueue),
       server_tcp_server_(server_tcp_server),
       node_info_(node_info),
-      epoll_fd_(-1)
+      epoll_fd_(-1),
+      has_client_tcp_server_(false)
 {
     Logger::info("EpollWorker initialized with server TCP server on port " + std::to_string(server_tcp_server_.get_fd()));
 }
@@ -63,7 +65,7 @@ void EpollWorker::start()
 
     Logger::info("EpollWorker: created epoll fd=" + std::to_string(epoll_fd_));
 
-    if (client_tcp_server_ != nullptr)
+    if (has_client_tcp_server_)
     {
         // Set client listen socket to non-blocking (CRITICAL for edge-triggered epoll)
         if (!set_nonblocking(client_tcp_server_.get_fd()))
@@ -726,7 +728,7 @@ void EpollWorker::enqueue_response(int client_fd, const Message &response)
                   " bytes for client_fd=" + std::to_string(client_fd));
 }
 
-bool EpollWorker::connect_to_orchestrator(const std::string &host, uint32_t port)
+bool EpollWorker::connect_to_orchestrator(const std::string &host, uint16_t port)
 {
     // Create NEW client connection (separate from our listening socket)
     auto conn = std::make_unique<Connection>();
@@ -738,7 +740,8 @@ bool EpollWorker::connect_to_orchestrator(const std::string &host, uint32_t port
         return false;
     }
 
-    int orchestrator_fd_ = conn->get_fd();
+    int fd = conn->get_fd();
+    orchestrator_fd_ = fd;
 
     node_info_.node_own_orchestrator_fd = orchestrator_fd_;
 
@@ -749,7 +752,7 @@ bool EpollWorker::connect_to_orchestrator(const std::string &host, uint32_t port
     return add_connection(std::move(conn), SERVER_CONN);
 }
 
-bool EpollWorker::connect_to_peer(const std::string &host, uint32_t port)
+bool EpollWorker::connect_to_peer(const std::string &host, uint16_t port)
 {
     // Create NEW client connection (separate from our listening socket)
     auto conn = std::make_unique<Connection>();
@@ -763,7 +766,7 @@ bool EpollWorker::connect_to_peer(const std::string &host, uint32_t port)
 
     int peer_fd = conn->get_fd();
 
-    node_info_.node_own_peer_fd.push_back(peer_fd);
+    node_info_.node_other_node_fd.push_back({host, peer_fd});
 
     Logger::info("EpollWorker: connected to peer " + host + ":" + std::to_string(port) +
                  " (fd=" + std::to_string(peer_fd) + ")");
@@ -780,12 +783,8 @@ bool EpollWorker::send_node_info_to_orchestrator()
         return false;
     }
 
-    Message msg = Message::create_rdma_process_registration(config_.node_id, node_info_);
-    if (!enqueue_response(orchestrator_fd_, msg))
-    {
-        Logger::error("EpollWorker: failed to enqueue node info message to orchestrator");
-        return false;
-    }
+    Message msg = Message::create_rdma_process_registration(node_info_.node_id, node_info_);
+    enqueue_response(orchestrator_fd_, msg);
 
     Logger::info("EpollWorker: sent node info to orchestrator");
 
