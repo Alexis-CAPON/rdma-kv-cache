@@ -103,33 +103,7 @@ fi
 echo ""
 
 # ============================================
-# Step 1: Build Locally (Optional)
-# ============================================
-
-if [ "${BUILD_LOCAL:-1}" == "1" ]; then
-    log_step "Building locally..."
-    cd "${LOCAL_DIR}"
-
-    if [ ! -d "build" ]; then
-        mkdir -p build
-    fi
-
-    cd build
-    cmake .. && make -j$(nproc)
-
-    if [ $? -eq 0 ]; then
-        log_success "Local build completed"
-    else
-        log_error "Local build failed"
-        exit 1
-    fi
-
-    cd "${LOCAL_DIR}"
-    echo ""
-fi
-
-# ============================================
-# Step 2: Sync Code to Remote Nodes
+# Step 1: Sync Code to Remote Nodes
 # ============================================
 
 log_step "Syncing code and configs to remote nodes..."
@@ -176,7 +150,7 @@ log_success "Code and configs synced to all nodes"
 echo ""
 
 # ============================================
-# Step 3: Build on Remote Nodes
+# Step 2: Build on Remote Nodes
 # ============================================
 
 log_step "Building on remote nodes..."
@@ -209,7 +183,7 @@ done
 echo ""
 
 # ============================================
-# Step 4: Install Python Bindings
+# Step 3: Install Python Bindings
 # ============================================
 
 log_step "Installing Python RDMA bindings..."
@@ -237,7 +211,7 @@ log_success "Python bindings installed"
 echo ""
 
 # ============================================
-# Step 5: Setup vLLM with RDMAConnector
+# Step 4: Setup vLLM with RDMAConnector
 # ============================================
 
 log_step "Setting up vLLM connector..."

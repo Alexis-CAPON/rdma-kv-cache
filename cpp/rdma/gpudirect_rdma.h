@@ -6,7 +6,9 @@
 // =============================================================================
 
 #include <infiniband/verbs.h>
+#ifdef ENABLE_GPU_DIRECT
 #include <cuda_runtime.h>
+#endif
 #include <cstdint>
 #include <string>
 
@@ -57,17 +59,19 @@ struct RdmaContext
 
 // ── Function declarations ──────────────────────────────────────────────────────
 
+#ifdef ENABLE_GPU_DIRECT
 // Bind calling thread to gpu_id; force context creation; enable P2P
 void bind_cuda_device(int gpu_id);
-
-// Open IB device by name (empty = first found), allocate PD
-void open_ib_device(RdmaContext &ctx, const std::string &dev_name);
 
 // Allocate GPU memory + pinned host mirror; register MR via GPUDirect RDMA
 void alloc_and_register_gpu_mem(RdmaContext &ctx,
                                 size_t bytes,
                                 int gpu_id,
                                 const MemoryConfig &mcfg);
+#endif
+
+// Open IB device by name (empty = first found), allocate PD
+void open_ib_device(RdmaContext &ctx, const std::string &dev_name);
 
 // Create send/recv CQs and RC QP; drive QP RESET → INIT
 void create_cqs_and_qp(RdmaContext &ctx, const RdmaConfig &rcfg);
