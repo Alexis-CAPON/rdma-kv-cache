@@ -31,6 +31,11 @@ node:
   enable_peer_access: true # Enable P2P between GPUs
   require_same_numa: false # Require GPU and HCA on same NUMA node
 
+# ── Transfer backend ─────────────────────────────────────────────────────────
+# use_gpu: true  → GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
+# use_gpu: false → Standard RDMA via MooncakeConnector (no GPU required)
+use_gpu: true
+
 # ── Memory Configuration ──────────────────────────────────────────────────────
 memory:
   kv_buffer_mb: 16384 # Total GPU memory buffer (16 GB)

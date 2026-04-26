@@ -162,9 +162,17 @@ class RDMAConnector(ExampleConnector):
 
       def _init_decode_staging_buffer(self):
           """
-          For decode node: wrap C++-allocated RDMA staging buffer as PyTorch tensor
+          For decode node: wrap C++-allocated RDMA staging buffer as PyTorch tensor.
+          Skipped when CUDA is not available (use_gpu=false / MooncakeConnector path).
           """
           if not RDMA_AVAILABLE:
+              return
+
+          if not torch.cuda.is_available():
+              logger.info(
+                  "CUDA not available — skipping RDMA staging buffer setup "
+                  "(MooncakeConnector manages its own buffers)"
+              )
               return
 
           # Get pre-allocated buffer from C++
@@ -188,6 +196,14 @@ class RDMAConnector(ExampleConnector):
           """
           Wrap C++-allocated GPU memory as PyTorch tensor (zero-copy)
           """
+          if not torch.cuda.is_available():
+              raise RuntimeError(
+                  "_wrap_gpu_pointer called but CUDA is not available. "
+                  "This code path is only reached when use_gpu=true (GPUDirect RDMAConnector). "
+                  "If you are running without a GPU, set use_gpu=false in your node config "
+                  "and use MooncakeConnector instead."
+              )
+
           dtype = torch.float16  # Match model dtype
           element_size = torch.finfo(dtype).bits // 8
           num_elements = size_bytes // element_size

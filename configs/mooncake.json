@@ -1,0 +1,7 @@
+{
+  "local_hostname": "<node_ip>",
+  "metadata_server": "<orchestrator_ip>:2379",
+  "protocol": "rdma",
+  "rdma_devices": ["mlx5_0"],
+  "use_gpu_direct": false
+}
