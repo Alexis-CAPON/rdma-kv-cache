@@ -72,6 +72,11 @@ vnodes_number: 1
 
 num_layers: 32
 
+# Transfer backend selection
+# use_gpu: true  -> GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
+# use_gpu: false -> Standard RDMA via MooncakeConnector (no GPU required)
+use_gpu: ${USE_GPU:-true}
+
 # Orchestrator specific settings
 orchestrator:
   expected_decode_nodes: ${NUM_DECODE_NODES}
@@ -192,6 +197,11 @@ worker_pool_size: 4
 vnodes_number: 1
 
 num_layers: 32
+
+# Transfer backend selection
+# use_gpu: true  -> GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
+# use_gpu: false -> Standard RDMA via MooncakeConnector (no GPU required)
+use_gpu: ${USE_GPU:-true}
 
 # Node configuration
 node:
@@ -346,6 +356,11 @@ worker_pool_size: 4
 vnodes_number: 1
 
 num_layers: 32
+
+# Transfer backend selection
+# use_gpu: true  -> GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
+# use_gpu: false -> Standard RDMA via MooncakeConnector (no GPU required)
+use_gpu: ${USE_GPU:-true}
 
 # Node configuration
 node:

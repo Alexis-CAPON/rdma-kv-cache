@@ -82,20 +82,39 @@ for i in "${!PREFILL_NODES[@]}"; do
 
     log_info "Starting ${NODE_ID} on ${HOST} (vLLM:${VLLM_PORT}, TCP:${NODE_TCP_PORT})..."
 
+    # Build vLLM connector arguments based on USE_GPU flag
+    if [ "${USE_GPU:-true}" = "true" ]; then
+        # GPUDirect RDMA path: use our custom RDMAConnector
+        KV_CONNECTOR_ARGS="--kv-connector rdma_connector --kv-role send"
+        GPU_ARGS="--gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}"
+        MOONCAKE_ENV=""
+    else
+        # CPU/standard RDMA path: use MooncakeConnector (no GPU required)
+        NODE_IP=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" "hostname -I | awk '{print \$1}'" 2>/dev/null || echo "127.0.0.1")
+        MOONCAKE_CFG="/tmp/mooncake-${NODE_ID}.json"
+        ORCH_IP=$(get_full_hostname "$ORCHESTRATOR_NODE")
+        ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+            "sed 's/<node_ip>/${NODE_IP}/g; s/<orchestrator_ip>/${ORCH_IP}/g' \
+            ${REMOTE_DIR}/configs/mooncake.json > ${MOONCAKE_CFG}"
+        KV_CONNECTOR_ARGS="--kv-connector MooncakeConnector --kv-role send --device cpu"
+        GPU_ARGS=""
+        MOONCAKE_ENV="export MOONCAKE_CONFIG_PATH=${MOONCAKE_CFG} &&"
+    fi
+
     # Start vLLM server (with disaggregated prefill mode)
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && mkdir -p logs && \
         export PYTHONPATH=${VLLM_PATH}:\${PYTHONPATH} && \
+        ${MOONCAKE_ENV} \
         nohup python -m vllm.entrypoints.openai.api_server \
             --model ${MODEL_NAME} \
             --host 0.0.0.0 \
             --port ${VLLM_PORT} \
             --max-model-len ${MODEL_MAX_LEN} \
-            --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} \
+            ${GPU_ARGS} \
             --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
             --disable-log-requests \
-            --kv-connector rdma_connector \
-            --kv-role send \
+            ${KV_CONNECTOR_ARGS} \
             > logs/${NODE_ID}-vllm.log 2>&1 < /dev/null &"
 
     # Give vLLM time to start
@@ -139,20 +158,39 @@ for i in "${!DECODE_NODES[@]}"; do
 
     log_info "Starting ${NODE_ID} on ${HOST} (vLLM:${VLLM_PORT}, TCP:${NODE_TCP_PORT})..."
 
+    # Build vLLM connector arguments based on USE_GPU flag
+    if [ "${USE_GPU:-true}" = "true" ]; then
+        # GPUDirect RDMA path: use our custom RDMAConnector
+        KV_CONNECTOR_ARGS="--kv-connector rdma_connector --kv-role recv"
+        GPU_ARGS="--gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}"
+        MOONCAKE_ENV=""
+    else
+        # CPU/standard RDMA path: use MooncakeConnector (no GPU required)
+        NODE_IP=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" "hostname -I | awk '{print \$1}'" 2>/dev/null || echo "127.0.0.1")
+        MOONCAKE_CFG="/tmp/mooncake-${NODE_ID}.json"
+        ORCH_IP=$(get_full_hostname "$ORCHESTRATOR_NODE")
+        ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+            "sed 's/<node_ip>/${NODE_IP}/g; s/<orchestrator_ip>/${ORCH_IP}/g' \
+            ${REMOTE_DIR}/configs/mooncake.json > ${MOONCAKE_CFG}"
+        KV_CONNECTOR_ARGS="--kv-connector MooncakeConnector --kv-role recv --device cpu"
+        GPU_ARGS=""
+        MOONCAKE_ENV="export MOONCAKE_CONFIG_PATH=${MOONCAKE_CFG} &&"
+    fi
+
     # Start vLLM server (with disaggregated decode mode)
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && mkdir -p logs && \
         export PYTHONPATH=${VLLM_PATH}:\${PYTHONPATH} && \
+        ${MOONCAKE_ENV} \
         nohup python -m vllm.entrypoints.openai.api_server \
             --model ${MODEL_NAME} \
             --host 0.0.0.0 \
             --port ${VLLM_PORT} \
             --max-model-len ${MODEL_MAX_LEN} \
-            --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} \
+            ${GPU_ARGS} \
             --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
             --disable-log-requests \
-            --kv-connector rdma_connector \
-            --kv-role recv \
+            ${KV_CONNECTOR_ARGS} \
             > logs/${NODE_ID}-vllm.log 2>&1 < /dev/null &"
 
     # Give vLLM time to start

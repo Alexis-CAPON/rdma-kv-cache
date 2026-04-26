@@ -83,6 +83,11 @@ MODEL_MAX_LEN=4096
 GPU_MEMORY_UTILIZATION=0.9
 TENSOR_PARALLEL_SIZE=1
 
+# Transfer backend selection
+# USE_GPU=true  → GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
+# USE_GPU=false → Standard RDMA via MooncakeConnector (no GPU required, works on CPU-only servers)
+USE_GPU="${USE_GPU:-true}"
+
 # vLLM installation path
 VLLM_PATH="/users/${USERNAME}/vllm"
 
@@ -150,3 +155,4 @@ export MODEL_MAX_LEN
 export GPU_MEMORY_UTILIZATION
 export TENSOR_PARALLEL_SIZE
 export VLLM_PATH
+export USE_GPU

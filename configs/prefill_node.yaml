@@ -15,6 +15,11 @@ rdma:
   max_concurrent_transfers: 16
   use_gpu_direct: true
 
+# Transfer backend selection
+# use_gpu: true  → GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
+# use_gpu: false → Standard RDMA via MooncakeConnector (no GPU required, works on CPU-only servers)
+use_gpu: true
+
 logging:
   level: "info"
   file: "/var/log/rdma-kv/prefill-01.log"

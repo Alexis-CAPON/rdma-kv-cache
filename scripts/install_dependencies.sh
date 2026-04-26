@@ -58,69 +58,85 @@ fi
 # 4. NVIDIA CUDA and Driver
 # ============================================
 
-echo "[4/10] Checking CUDA installation..."
+# ============================================
+# 4. NVIDIA CUDA and Driver  (GPU path only)
+# ============================================
 
-if command -v nvidia-smi &> /dev/null; then
-    echo "  CUDA appears to be installed:"
-    nvidia-smi --query-gpu=name,driver_version,cuda_version --format=csv,noheader | head -1
+if [ "${USE_GPU:-true}" = "true" ]; then
+    echo "[4/10] Checking CUDA installation (USE_GPU=true)..."
+
+    if command -v nvidia-smi &> /dev/null; then
+        echo "  CUDA appears to be installed:"
+        nvidia-smi --query-gpu=name,driver_version,cuda_version --format=csv,noheader | head -1
+    else
+        echo "  WARNING: CUDA not detected. Installing NVIDIA drivers and CUDA toolkit..."
+
+        # Install NVIDIA server driver from Ubuntu repos (supports CUDA 12.x)
+        echo "  Installing NVIDIA server driver 565..."
+        sudo apt-get install -y nvidia-driver-565-server
+
+        # Install CUDA toolkit from Ubuntu repos
+        echo "  Installing CUDA toolkit..."
+        sudo apt-get install -y nvidia-cuda-toolkit
+
+        echo "  CUDA installed. REBOOT REQUIRED for driver to take effect."
+    fi
 else
-    echo "  WARNING: CUDA not detected. Installing NVIDIA drivers and CUDA toolkit..."
-
-    # Install NVIDIA server driver from Ubuntu repos (supports CUDA 12.x)
-    echo "  Installing NVIDIA server driver 565..."
-    sudo apt-get install -y nvidia-driver-565-server
-
-    # Install CUDA toolkit from Ubuntu repos
-    echo "  Installing CUDA toolkit..."
-    sudo apt-get install -y nvidia-cuda-toolkit
-
-    echo "  CUDA installed. REBOOT REQUIRED for driver to take effect."
+    echo "[4/10] Skipping CUDA/GPU driver installation (USE_GPU=false, using MooncakeConnector)"
 fi
 
 # ============================================
 # 5. GPUDirect RDMA Kernel Module (nvidia-peermem)
 # ============================================
 
-echo "[5/10] Installing GPUDirect RDMA kernel module..."
+# ============================================
+# 5. GPUDirect RDMA Kernel Module (nvidia-peermem)  [GPU path only]
+# ============================================
 
-# Check if nvidia-peermem is already loaded
-if lsmod | grep -q nvidia_peermem; then
-    echo "  nvidia-peermem module already loaded"
-else
-    # Try to load from DKMS if available
-    if [ -d /usr/src/nvidia-peermem-* ]; then
-        echo "  Found nvidia-peermem DKMS source, building..."
-        PEERMEM_VERSION=$(ls -d /usr/src/nvidia-peermem-* | head -1 | sed 's/.*nvidia-peermem-//')
-        sudo dkms install nvidia-peermem/$PEERMEM_VERSION || true
-        sudo modprobe nvidia-peermem || echo "  Failed to load nvidia-peermem (may need reboot)"
+if [ "${USE_GPU:-true}" = "true" ]; then
+    echo "[5/10] Installing GPUDirect RDMA kernel module (USE_GPU=true)..."
+
+    # Check if nvidia-peermem is already loaded
+    if lsmod | grep -q nvidia_peermem; then
+        echo "  nvidia-peermem module already loaded"
     else
-        echo "  Installing nvidia-peermem from source..."
+        # Try to load from DKMS if available
+        if [ -d /usr/src/nvidia-peermem-* ]; then
+            echo "  Found nvidia-peermem DKMS source, building..."
+            PEERMEM_VERSION=$(ls -d /usr/src/nvidia-peermem-* | head -1 | sed 's/.*nvidia-peermem-//')
+            sudo dkms install nvidia-peermem/$PEERMEM_VERSION || true
+            sudo modprobe nvidia-peermem || echo "  Failed to load nvidia-peermem (may need reboot)"
+        else
+            echo "  Installing nvidia-peermem from source..."
 
-        # Clone and build nvidia-peermem
-        cd /tmp
-        git clone https://github.com/Mellanox/nv_peer_memory.git || true
-        cd nv_peer_memory
+            # Clone and build nvidia-peermem
+            cd /tmp
+            git clone https://github.com/Mellanox/nv_peer_memory.git || true
+            cd nv_peer_memory
 
-        # Build and install
-        ./build_module.sh
-        cd /tmp
-        tar xzf /tmp/nvidia-peer-memory_*.tar.gz
-        cd nvidia-peer-memory-*
-        sudo ./install.sh
+            # Build and install
+            ./build_module.sh
+            cd /tmp
+            tar xzf /tmp/nvidia-peer-memory_*.tar.gz
+            cd nvidia-peer-memory-*
+            sudo ./install.sh
 
-        # Load module
-        sudo modprobe nvidia-peermem || echo "  Failed to load nvidia-peermem"
+            # Load module
+            sudo modprobe nvidia-peermem || echo "  Failed to load nvidia-peermem"
 
-        # Enable on boot
-        echo "nvidia-peermem" | sudo tee /etc/modules-load.d/nvidia-peermem.conf
+            # Enable on boot
+            echo "nvidia-peermem" | sudo tee /etc/modules-load.d/nvidia-peermem.conf
+        fi
     fi
-fi
 
-# Verify GPUDirect is available
-if lsmod | grep -q nvidia_peermem; then
-    echo "  ✓ GPUDirect RDMA module loaded successfully"
+    # Verify GPUDirect is available
+    if lsmod | grep -q nvidia_peermem; then
+        echo "  ✓ GPUDirect RDMA module loaded successfully"
+    else
+        echo "  ⚠ GPUDirect RDMA module not loaded (may need reboot)"
+    fi
 else
-    echo "  ⚠ GPUDirect RDMA module not loaded (may need reboot)"
+    echo "[5/10] Skipping nvidia-peermem installation (USE_GPU=false, using MooncakeConnector)"
 fi
 
 # ============================================
@@ -158,10 +174,15 @@ echo "  Upgrading pip..."
 pip install --upgrade pip setuptools wheel
 
 # Install PyTorch with CUDA support
-echo "  Installing PyTorch with CUDA 12.1..."
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+if [ "${USE_GPU:-true}" = "true" ]; then
+    echo "  Installing PyTorch with CUDA 12.1 (USE_GPU=true)..."
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+else
+    echo "  Installing PyTorch (CPU-only, USE_GPU=false)..."
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+fi
 
-# Install vLLM and dependencies
+# Install vLLM and common dependencies
 echo "  Installing vLLM and dependencies..."
 pip install \
     vllm \
@@ -172,6 +193,14 @@ pip install \
     packaging \
     ray \
     sentencepiece
+
+# Install backend-specific packages
+if [ "${USE_GPU:-true}" = "true" ]; then
+    echo "  GPUDirect RDMA path: no additional Python packages required"
+else
+    echo "  MooncakeConnector path: installing mooncake-transfer-engine..."
+    pip install mooncake-transfer-engine
+fi
 
 echo "  ✓ Python packages installed in virtual environment: ${VENV_DIR}"
 echo "  To use: source ${VENV_DIR}/bin/activate"
@@ -292,24 +321,37 @@ cat /proc/meminfo | grep -E "HugePages_Total|HugePages_Free|Hugepagesize"
 
 echo ""
 echo "=========================================="
-echo "NVIDIA/CUDA:"
-echo "=========================================="
+if [ "${USE_GPU:-true}" = "true" ]; then
+    echo "NVIDIA/CUDA (USE_GPU=true):"
+    echo "=========================================="
 
-if command -v nvidia-smi &> /dev/null; then
-    nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=table
+    if command -v nvidia-smi &> /dev/null; then
+        nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=table
+        echo ""
+        echo "  CUDA version:"
+        nvidia-smi | grep "CUDA Version" || nvcc --version | grep "release"
+    else
+        echo "  NVIDIA driver not loaded (reboot may be required)"
+    fi
+
     echo ""
-    echo "  CUDA version:"
-    nvidia-smi | grep "CUDA Version" || nvcc --version | grep "release"
+    echo "  GPUDirect RDMA status:"
+    if lsmod | grep -q nvidia_peermem; then
+        echo "    ✓ nvidia-peermem module LOADED"
+    else
+        echo "    ✗ nvidia-peermem module NOT LOADED"
+    fi
 else
-    echo "  NVIDIA driver not loaded (reboot may be required)"
-fi
-
-echo ""
-echo "  GPUDirect RDMA status:"
-if lsmod | grep -q nvidia_peermem; then
-    echo "    ✓ nvidia-peermem module LOADED"
-else
-    echo "    ✗ nvidia-peermem module NOT LOADED"
+    echo "MooncakeConnector (USE_GPU=false):"
+    echo "=========================================="
+    echo "  GPU/CUDA: skipped"
+    echo ""
+    echo "  mooncake-transfer-engine:"
+    python3 -c "import mooncake; print('    ✓ mooncake-transfer-engine INSTALLED')" 2>/dev/null \
+        || echo "    ✗ mooncake-transfer-engine NOT FOUND (check pip install)"
+    echo ""
+    echo "  Mooncake config template: configs/mooncake.json"
+    echo "  Edit <node_ip> and <orchestrator_ip> before starting nodes"
 fi
 
 echo ""
@@ -319,11 +361,17 @@ echo "=========================================="
 echo ""
 echo "IMPORTANT NEXT STEPS:"
 echo "  1. LOGOUT and LOGIN again (or reboot) for limits to take effect"
-echo "  2. If CUDA was just installed, REBOOT the system"
-echo "  3. Verify GPUDirect: lsmod | grep nvidia_peermem"
-echo "  4. Test RDMA: ibv_devinfo"
-echo "  5. Test GPU: nvidia-smi"
-echo ""
-echo "To test GPUDirect RDMA bandwidth:"
-echo "  ib_write_bw -d mlx5_0 -a --use_cuda=0"
+if [ "${USE_GPU:-true}" = "true" ]; then
+    echo "  2. If CUDA was just installed, REBOOT the system"
+    echo "  3. Verify GPUDirect: lsmod | grep nvidia_peermem"
+    echo "  4. Test RDMA: ibv_devinfo"
+    echo "  5. Test GPU: nvidia-smi"
+    echo ""
+    echo "To test GPUDirect RDMA bandwidth:"
+    echo "  ib_write_bw -d mlx5_0 -a --use_cuda=0"
+else
+    echo "  2. Edit configs/mooncake.json with your node IPs"
+    echo "  3. Test RDMA: ibv_devinfo"
+    echo "  4. Set USE_GPU=false in .env before running smart_run.sh"
+fi
 echo ""

@@ -5,6 +5,11 @@ orchestrator:
   health_check_interval_ms: 5000
   request_timeout_ms: 30000
 
+# Transfer backend selection
+# use_gpu: true  → GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
+# use_gpu: false → Standard RDMA via MooncakeConnector (no GPU required, works on CPU-only servers)
+use_gpu: true
+
 logging:
   level: "info" # debug, info, warn, error
   file: "/var/log/rdma-kv/orchestrator.log"
