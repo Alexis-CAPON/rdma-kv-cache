@@ -199,7 +199,9 @@ class RDMAConnector(ExampleConnector):
           if not torch.cuda.is_available():
               raise RuntimeError(
                   "_wrap_gpu_pointer called but CUDA is not available. "
-                  "This path requires use_gpu=true."
+                  "This code path is only reached when use_gpu=true (GPUDirect RDMAConnector). "
+                  "If you are running without a GPU, set use_gpu=false in your node config "
+                  "and use MooncakeConnector instead."
               )
 
           dtype = torch.float16  # Match model dtype

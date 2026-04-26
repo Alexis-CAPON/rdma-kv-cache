@@ -347,7 +347,8 @@ else
     echo "  GPU/CUDA: skipped"
     echo ""
     echo "  mooncake-transfer-engine:"
-    python3 -c "import mooncake; print('    ✓ mooncake-transfer-engine INSTALLED')" 2>/dev/null \
+    pip show mooncake-transfer-engine > /dev/null 2>&1 \
+        && echo "    ✓ mooncake-transfer-engine INSTALLED" \
         || echo "    ✗ mooncake-transfer-engine NOT FOUND (check pip install)"
     echo ""
     echo "  Mooncake config template: configs/mooncake.json"

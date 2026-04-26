@@ -90,7 +90,12 @@ for i in "${!PREFILL_NODES[@]}"; do
         MOONCAKE_ENV=""
     else
         # CPU/standard RDMA path: use MooncakeConnector (no GPU required)
-        NODE_IP=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" "hostname -I | awk '{print \$1}'" 2>/dev/null || echo "127.0.0.1")
+        NODE_IP=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" "hostname -I | awk '{print \$1}'" 2>&1) \
+            || { log_error "Failed to resolve IP for ${HOST}"; exit 1; }
+        if [ -z "$NODE_IP" ]; then
+            log_error "Could not determine IP address of ${HOST} — cannot generate Mooncake config"
+            exit 1
+        fi
         MOONCAKE_CFG="/tmp/mooncake-${NODE_ID}.json"
         ORCH_IP=$(get_full_hostname "$ORCHESTRATOR_NODE")
         ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
@@ -166,7 +171,12 @@ for i in "${!DECODE_NODES[@]}"; do
         MOONCAKE_ENV=""
     else
         # CPU/standard RDMA path: use MooncakeConnector (no GPU required)
-        NODE_IP=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" "hostname -I | awk '{print \$1}'" 2>/dev/null || echo "127.0.0.1")
+        NODE_IP=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" "hostname -I | awk '{print \$1}'" 2>&1) \
+            || { log_error "Failed to resolve IP for ${HOST}"; exit 1; }
+        if [ -z "$NODE_IP" ]; then
+            log_error "Could not determine IP address of ${HOST} — cannot generate Mooncake config"
+            exit 1
+        fi
         MOONCAKE_CFG="/tmp/mooncake-${NODE_ID}.json"
         ORCH_IP=$(get_full_hostname "$ORCHESTRATOR_NODE")
         ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
