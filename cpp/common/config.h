@@ -87,6 +87,11 @@ public:
 
     std::vector<PeerConfig> peers;
 
+    // ── Transfer backend selection ────────────────────────────────────────────
+    // true  → GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
+    // false → Standard RDMA via MooncakeConnector (no GPU required, works on CPU-only servers)
+    bool use_gpu = true;
+
     // ── GPUDirect RDMA Configuration ─────────────────────────────────────────
     RdmaConfig rdma;
     MemoryConfig memory;
