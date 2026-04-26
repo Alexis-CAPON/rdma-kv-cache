@@ -59,6 +59,9 @@ Config Config::fromFile(const std::string &path)
 
     config.num_layers = yaml["num_layers"] ? yaml["num_layers"].as<uint32_t>() : 12;
 
+    // Transfer backend selection
+    config.use_gpu = yaml["use_gpu"] ? yaml["use_gpu"].as<bool>() : true;
+
     config.role = yaml["node"]["role"].as<std::string>();
 
     config.vnodes_number = yaml["vnodes_number"] ? yaml["vnodes_number"].as<int>() : 1;

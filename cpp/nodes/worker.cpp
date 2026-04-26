@@ -478,14 +478,20 @@ void Worker::handle_broadcast_member_info(Message *msg)
         }
     }
 
-    // Connect to all QPs
+    // Connect to all QPs (GPUDirect RDMA path only)
 
-    if (!rdma_engine_.connect_all_qps())
+    if (config_.use_gpu)
     {
-        Logger::error("Failed to connect QP with peers");
+        if (!rdma_engine_.connect_all_qps())
+        {
+            Logger::error("Failed to connect QP with peers");
+        }
+        Logger::info("Successfully connected QP with peers");
     }
-
-    Logger::info("Successfully connected QP with peers");
+    else
+    {
+        Logger::info("use_gpu=false — skipping RDMA QP connection (MooncakeConnector path)");
+    }
 
     // Start VLLM Server
 
