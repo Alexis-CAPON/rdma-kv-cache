@@ -61,15 +61,20 @@ target_include_directories(network PUBLIC
 add_library(rdma_engine STATIC
     rdma/rdma_engine.cpp
     rdma/device_probe.cpp
-    rdma/gpudirect_rdma.cpp
 )
+
+if(ENABLE_GPU_DIRECT)
+    target_sources(rdma_engine PRIVATE rdma/gpudirect_rdma.cpp)
+    target_compile_definitions(rdma_engine PUBLIC ENABLE_GPU_DIRECT)
+    target_link_libraries(rdma_engine PUBLIC ${CUDA_LIBRARIES})
+    target_include_directories(rdma_engine PUBLIC ${CUDA_INCLUDE_DIRS})
+endif()
 
 target_link_libraries(rdma_engine
     PUBLIC
         common
         ${IBVERBS_LIB}
         ${RDMACM_LIB}
-        ${CUDA_LIBRARIES}
 )
 
 target_include_directories(rdma_engine PUBLIC

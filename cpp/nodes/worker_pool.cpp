@@ -1,6 +1,5 @@
 #include "cpp/nodes/worker_pool.h"
 #include "cpp/common/logger.h"
-#include <chrono>
 #include <thread>
 
 WorkerPool::WorkerPool(
@@ -155,6 +154,9 @@ void WorkerPool::stop()
     // Signal all threads to stop
     running_.store(false);
 
+    // Wake any worker threads blocked in wait_and_pop
+    event_queue_.wake_all();
+
     // Join all worker threads
     for (auto &thread : threads_)
     {
@@ -177,19 +179,13 @@ void WorkerPool::worker_thread_function(uint32_t worker_id)
 
     while (running_.load())
     {
-        // Try to pop an event from the queue
         Event event;
-        bool success = event_queue_.pop(event);
+        // Block until an event is available or the queue is stopped
+        bool success = event_queue_.wait_and_pop(event);
 
         if (success)
         {
-            // Process the event
             worker->process_event(event);
-        }
-        else
-        {
-            // Queue is empty, sleep briefly to avoid busy-waiting
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
     }
 

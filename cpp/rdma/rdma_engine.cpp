@@ -2,7 +2,9 @@
 #include "cpp/rdma/device_probe.h"
 #include "cpp/common/logger.h"
 #include <infiniband/verbs.h>
+#ifdef ENABLE_GPU_DIRECT
 #include <cuda_runtime.h>
+#endif
 #include <cstring>
 #include <stdexcept>
 

@@ -1,19 +1,31 @@
 cmake_minimum_required(VERSION 3.18)
-project(rdma_kv_cache CXX CUDA)
+
+# Build options (must be declared before project() so the CUDA language is
+# only requested when GPUDirect support is actually needed)
+option(ENABLE_GPU_DIRECT "Enable GPU Direct RDMA" ON)
+option(BUILD_TESTS "Build tests" ON)
+option(BUILD_BENCHMARKS "Build benchmarks" ON)
+
+if(ENABLE_GPU_DIRECT)
+    project(rdma_kv_cache CXX CUDA)
+    set(CMAKE_CUDA_STANDARD 17)
+else()
+    project(rdma_kv_cache CXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Build options
-option(BUILD_TESTS "Build tests" ON)
-option(BUILD_BENCHMARKS "Build benchmarks" ON)
-option(ENABLE_GPU_DIRECT "Enable GPU Direct RDMA" ON)
 
 # Find dependencies
 find_package(pybind11 REQUIRED)
-find_package(CUDA REQUIRED)
+
+if(ENABLE_GPU_DIRECT)
+    find_package(CUDA REQUIRED)
+    message(STATUS "GPUDirect RDMA enabled")
+else()
+    message(STATUS "GPUDirect RDMA disabled — CPU-only RDMA path selected")
+endif()
 
 # RDMA libraries
 find_library(IBVERBS_LIB ibverbs REQUIRED)
@@ -31,10 +43,10 @@ message(STATUS "Found libibverbs: ${IBVERBS_LIB}")
 message(STATUS "Found librdmacm: ${RDMACM_LIB}")
 
 # Include directories
-include_directories(
-    ${CMAKE_SOURCE_DIR}/cpp/include
-    ${CUDA_INCLUDE_DIRS}
-)
+include_directories(${CMAKE_SOURCE_DIR}/cpp/include)
+if(ENABLE_GPU_DIRECT)
+    include_directories(${CUDA_INCLUDE_DIRS})
+endif()
 
 # Add subdirectories
 add_subdirectory(cpp)
