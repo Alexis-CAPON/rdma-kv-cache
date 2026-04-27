@@ -7,7 +7,7 @@ WorkerPool::WorkerPool(
     EventQueue &event_queue,
     EpollWorker &epoll_worker,
     const Config &config,
-    uint64_t node_id,
+    const std::string &node_id,
     NodeRegistry &node_registry,
     RdmaExchangeTracker &rdma_exchange_tracker,
     RequestTrackerOrchestrator &request_tracker_orchestrator,
@@ -65,7 +65,7 @@ WorkerPool::WorkerPool(
     EventQueue &event_queue,
     EpollWorker &epoll_worker,
     const Config &config,
-    uint64_t node_id,
+    const std::string &node_id,
     NodeInfo &node_info,
     RDMAEngine &rdma_engine,
     Node *node_ptr)

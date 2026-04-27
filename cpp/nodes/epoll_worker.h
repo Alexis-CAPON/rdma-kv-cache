@@ -67,11 +67,13 @@ private:
     std::atomic<bool> running_;
     std::thread io_thread_;
 
-    EventQueue event_queue_;
+    EventQueue &event_queue_;
     TCPServer &client_tcp_server_;
     TCPServer &server_tcp_server_;
     NodeInfo &node_info_;
     NodeRegistry &node_registry_;
+
+    bool has_client_tcp_server_; // true for orchestrator, false for node
 
     int orchestrator_fd_ = -1; // File descriptor for orchestrator connection (if connected)
 

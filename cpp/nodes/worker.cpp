@@ -5,6 +5,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cstring>
+#include <functional>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -14,7 +15,7 @@ Worker::Worker(
     uint32_t worker_id,
     EpollWorker &epoll_worker,
     const Config &config,
-    uint64_t node_id,
+    const std::string &node_id,
     std::atomic<uint64_t> *server_ops_counter,
     NodeInfo &node_info,
     RDMAEngine &rdma_engine,
@@ -37,7 +38,7 @@ Worker::Worker(
     uint32_t worker_id,
     EpollWorker &epoll_worker,
     const Config &config,
-    uint64_t node_id,
+    const std::string &node_id,
     std::atomic<uint64_t> *server_ops_counter,
     NodeRegistry &node_registry,
     RdmaExchangeTracker &rdma_exchange_tracker,
@@ -161,8 +162,9 @@ uint64_t Worker::generate_transaction_id()
                              now.time_since_epoch())
                              .count();
 
-    // Encode: timestamp (low 32 bits) | node_id (24 bits) | worker_id (8 bits)
-    return (timestamp << 32) | ((node_id_ & 0xFFFFFF) << 8) | (worker_id_ & 0xFF);
+    // Encode: timestamp (low 32 bits) | node_id hash (24 bits) | worker_id (8 bits)
+    uint64_t node_hash = std::hash<std::string>{}(node_id_) & 0xFFFFFF;
+    return (timestamp << 32) | (node_hash << 8) | (worker_id_ & 0xFF);
 }
 
 // ============================================================================
@@ -201,12 +203,18 @@ void Worker::handle_client_request(int client_fd, Message *msg)
     request_info.timestamp_created = std::chrono::system_clock::now().time_since_epoch().count();
 
     // Create a new request entry in the RequestTracker using the RequestInfo and client_fd for response delivery later
-    request_tracker_orchestrator_.track_request(&request_info, client_fd);
+    request_tracker_orchestrator_.track_request(request_info, client_fd);
 
     // Send an ASSIGN_REQUEST message to the selected prefill node with the request details and the selected decode node info
     Message assign_msg = Message::create_assign_request(config_.orchestrator_id, request_info);
 
-    send_server_response(node_registry_.get_node_fd(selected_prefill_node->node_id), assign_msg);
+    auto prefill_fd = node_registry_.get_node_fd(selected_prefill_node->node_id);
+    if (!prefill_fd)
+    {
+        Logger::error("Failed to find prefill node fd for node_id=" + selected_prefill_node->node_id);
+        return;
+    }
+    send_server_response(prefill_fd.value(), assign_msg);
 
     request_router_.increment_node_load(selected_prefill_node->node_id);
     request_router_.increment_node_load(selected_decode_node->node_id);
@@ -229,7 +237,7 @@ void Worker::handle_prefill_complete_orchestrator(int server_fd, Message *msg)
                   " request_id=" + msg->request_info.request_id);
 
     // Update the RequestTracker with the prefill completion status for this request
-    request_tracker_orchestrator_.update_request_status(msg->request_info.request_id, RequestStatus::DECODING);
+    request_tracker_orchestrator_.update_status(msg->request_info.request_id, RequestStatus::DECODING);
 
     // Send a DECODE_COMPLETE message to the assigned decode node to trigger the decode phase for this request
     auto decode_node_fd = node_registry_.get_node_fd(msg->request_info.decode_node_id);
@@ -253,7 +261,7 @@ void Worker::handle_process_rdma_registration(int server_fd, Message *msg)
     // We check for MAP we have, if it contain all the node required, if not we wait for other message, if we have all the node, we broadcast to all the node the member info, so they can start RDMA connection setup among themselves
     Logger::debug("Worker " + std::to_string(worker_id_) +
                   " handling RDMA_PROCESS_REGISTRATION from fd=" + std::to_string(server_fd) +
-                  " node_id=" + std::to_string(msg->source_node_id));
+                  " node_id=" + msg->source_node_id);
 
     NodeInfo received_node_info = msg->node_info;
 
@@ -281,7 +289,13 @@ void Worker::handle_process_rdma_registration(int server_fd, Message *msg)
         // Broadcast to all registered nodes
         for (const auto &node : all_nodes)
         {
-            send_server_response(node_registry_.get_node_fd(node.node_id), broadcast_msg);
+            auto node_fd = node_registry_.get_node_fd(node.node_id);
+            if (!node_fd)
+            {
+                Logger::warning("No fd found for node_id=" + node.node_id + ", skipping broadcast");
+                continue;
+            }
+            send_server_response(node_fd.value(), broadcast_msg);
             Logger::debug("Sent BROADCAST_MEMBER_INFO to node_id=" + node.node_id +
                           " at " + node.ip_address + ":" + std::to_string(node.tcp_port));
         }
@@ -300,7 +314,7 @@ void Worker::handle_ready(int server_fd, Message *msg)
 {
     Logger::debug("Worker " + std::to_string(worker_id_) +
                   " handling RDMA_READY from fd=" + std::to_string(server_fd) +
-                  " node_id=" + std::to_string(msg->source_node_id));
+                  " node_id=" + msg->source_node_id);
     // We wait for all the node to send RDMA_READY message, which indicate that all the node is ready for RDMA communication, then we can start processing client request and assign request to prefill node
 
     std::string node_id = msg->source_node_id;
@@ -322,7 +336,7 @@ void Worker::handle_decode_complete(int server_fd, Message *msg)
                   " request_id=" + msg->request_info.request_id);
 
     // Update the RequestTracker with the decode completion status for this request
-    request_tracker_orchestrator_.update_request_status(msg->request_info.request_id, RequestStatus::COMPLETED);
+    request_tracker_orchestrator_.update_status(msg->request_info.request_id, RequestStatus::COMPLETED);
 
     // Send the generated response back to the client
     auto client_fd = request_tracker_orchestrator_.get_client_fd(msg->request_info.request_id);
@@ -346,7 +360,7 @@ void Worker::handle_request_failed(int server_fd, Message *msg)
                   " request_id=" + msg->request_info.request_id +
                   " error_message=" + msg->error_message);
     // Update the RequestTracker with the failure status for this request
-    request_tracker_orchestrator_.update_request_status(msg->request_info.request_id, RequestStatus::FAILED);
+    request_tracker_orchestrator_.update_status(msg->request_info.request_id, RequestStatus::FAILED);
 
     // Send an error response back to the client
     auto client_fd = request_tracker_orchestrator_.get_client_fd(msg->request_info.request_id);

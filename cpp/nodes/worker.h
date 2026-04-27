@@ -25,8 +25,8 @@ public:
         uint32_t worker_id,
         EpollWorker &epoll_worker,
         const Config &config,
-        uint64_t node_id,
-        std::atomic<uint64_t> *server_ops_counter = nullptr,
+        const std::string &node_id,
+        std::atomic<uint64_t> *server_ops_counter,
         NodeInfo &node_info,
         RDMAEngine &rdma_engine,
         Node *node_ptr = nullptr);
@@ -36,8 +36,8 @@ public:
         uint32_t worker_id,
         EpollWorker &epoll_worker,
         const Config &config,
-        uint64_t node_id,
-        std::atomic<uint64_t> *server_ops_counter = nullptr,
+        const std::string &node_id,
+        std::atomic<uint64_t> *server_ops_counter,
         NodeRegistry &node_registry,
         RdmaExchangeTracker &rdma_exchange_tracker,
         RequestTrackerOrchestrator &request_tracker_orchestrator,
@@ -54,7 +54,7 @@ public:
 private:
     // Worker identity
     uint32_t worker_id_;
-    uint64_t node_id_;
+    std::string node_id_;
 
     EpollWorker &epoll_worker_;
     Config config_;
@@ -62,10 +62,10 @@ private:
     NodeInfo &node_info_;     // only used by prefill/decode workers
     RDMAEngine &rdma_engine_; // only used by prefill/decode workers
 
-    NodeRegistry &node_registry_;                             // Only used by orchestrator worker
-    RdmaExchangeTracker rdma_exchange_tracker_;               // Only used by orchestrator worker
-    RequestTrackerOrchestrator request_tracker_orchestrator_; // Only used by orchestrator worker
-    RequestRouter request_router_;                            // Only used by orchestrator worker
+    NodeRegistry &node_registry_;                                       // Only used by orchestrator worker
+    RdmaExchangeTracker &rdma_exchange_tracker_;                        // Only used by orchestrator worker
+    RequestTrackerOrchestrator &request_tracker_orchestrator_;          // Only used by orchestrator worker
+    RequestRouter &request_router_;                                     // Only used by orchestrator worker
 
     Node *node_ptr_; // Only used by prefill/decode workers (for vLLM server management)
 
