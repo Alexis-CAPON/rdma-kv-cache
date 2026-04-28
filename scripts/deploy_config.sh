@@ -72,16 +72,16 @@ REMOTE_DIR="${REMOTE_DIR:-/users/${USERNAME}/rdma-kv-cache}"
 LOCAL_DIR="${LOCAL_DIR:-$PROJECT_ROOT}"
 
 # Port configuration
-ORCHESTRATOR_PORT=9000
-VLLM_PREFILL_BASE_PORT=8100  # Prefill nodes: 8100, 8101, 8102...
-VLLM_DECODE_BASE_PORT=8200   # Decode nodes: 8200, 8201, 8202...
-NODE_TCP_BASE_PORT=18500     # C++ node TCP: 18500, 18501, 18502...
+ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-9000}"
+VLLM_PREFILL_BASE_PORT="${VLLM_PREFILL_BASE_PORT:-8100}"  # Prefill nodes: 8100, 8101, 8102...
+VLLM_DECODE_BASE_PORT="${VLLM_DECODE_BASE_PORT:-8200}"   # Decode nodes: 8200, 8201, 8202...
+NODE_TCP_BASE_PORT="${NODE_TCP_BASE_PORT:-18500}"     # C++ node TCP: 18500, 18501, 18502...
 
 # Model configuration
-MODEL_NAME="meta-llama/Llama-2-7b-hf"
-MODEL_MAX_LEN=4096
-GPU_MEMORY_UTILIZATION=0.9
-TENSOR_PARALLEL_SIZE=1
+MODEL_NAME="${MODEL_NAME:-meta-llama/Llama-2-7b-hf}"
+MODEL_MAX_LEN="${MODEL_MAX_LEN:-4096}"
+GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.9}"
+TENSOR_PARALLEL_SIZE="${TENSOR_PARALLEL_SIZE:-1}"
 
 # Transfer backend selection
 # USE_GPU=true  → GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
@@ -95,7 +95,12 @@ VLLM_PATH="/users/${USERNAME}/vllm"
 RSYNC_EXCLUDE="--exclude='build/' --exclude='logs/' --exclude='.git/' --exclude='vllm/' --exclude='*.o' --exclude='*.a'"
 
 # Build command on remote server
-REMOTE_BUILD_CMD="cd ${REMOTE_DIR} && mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
+# Conditionally enable/disable GPU Direct based on USE_GPU setting
+if [ "$USE_GPU" = "true" ]; then
+    REMOTE_BUILD_CMD="cd ${REMOTE_DIR} && mkdir -p build && cd build && cmake .. -DENABLE_GPU_DIRECT=ON && make -j\$(nproc)"
+else
+    REMOTE_BUILD_CMD="cd ${REMOTE_DIR} && mkdir -p build && cd build && cmake .. -DENABLE_GPU_DIRECT=OFF && make -j\$(nproc)"
+fi
 
 # vLLM build command (if needed)
 VLLM_BUILD_CMD="cd ${VLLM_PATH} && pip install -e . --no-build-isolation"
@@ -133,6 +138,45 @@ log_step() {
     echo -e "${COLOR_MAGENTA}[STEP]${COLOR_RESET} $1"
 }
 
+# ============================================
+# YAML Configuration Defaults
+# ============================================
+# These values can be overridden in .env file
+
+# Cluster settings
+REPLICATION_FACTOR="${REPLICATION_FACTOR:-3}"
+NUMBER_OF_KEYS_HASHTABLE="${NUMBER_OF_KEYS_HASHTABLE:-10000}"
+SIZE_LOCAL_BUFFER="${SIZE_LOCAL_BUFFER:-1024}"
+EVENT_QUEUE_SIZE="${EVENT_QUEUE_SIZE:-1000}"
+WORKER_POOL_SIZE="${WORKER_POOL_SIZE:-4}"
+VNODES_NUMBER="${VNODES_NUMBER:-1}"
+NUM_LAYERS="${NUM_LAYERS:-32}"
+
+# RDMA/InfiniBand Configuration
+NODE_GID_INDEX="${NODE_GID_INDEX:-0}"              # 0=IB, 3=RoCEv2
+NODE_MTU="${NODE_MTU:-0}"                          # Path MTU: 0=auto-discover (recommended), or override with 256/512/1024/2048/4096
+NODE_SL="${NODE_SL:-0}"                            # Service Level
+NODE_QP_MAX_SEND_WR="${NODE_QP_MAX_SEND_WR:-64}"
+NODE_QP_MAX_RECV_WR="${NODE_QP_MAX_RECV_WR:-64}"
+NODE_QP_MAX_INLINE_DATA="${NODE_QP_MAX_INLINE_DATA:-64}"
+NODE_MAX_RD_ATOMIC="${NODE_MAX_RD_ATOMIC:-16}"
+NODE_MIN_RNR_TIMER="${NODE_MIN_RNR_TIMER:-12}"     # ~0.64 ms
+NODE_TIMEOUT="${NODE_TIMEOUT:-14}"                 # local ACK timeout (~67 ms)
+NODE_RETRY_CNT="${NODE_RETRY_CNT:-7}"
+NODE_RNR_RETRY="${NODE_RNR_RETRY:-7}"              # 7 = infinite
+NODE_CQ_DEPTH="${NODE_CQ_DEPTH:-128}"
+
+# GPU Configuration
+NODE_ENABLE_PEER_ACCESS="${NODE_ENABLE_PEER_ACCESS:-true}"
+NODE_REQUIRE_SAME_NUMA="${NODE_REQUIRE_SAME_NUMA:-false}"
+
+# Memory Configuration
+MEMORY_KV_BUFFER_MB="${MEMORY_KV_BUFFER_MB:-16384}"           # Total GPU memory buffer (16 GB)
+MEMORY_CHUNK_SIZE_MB="${MEMORY_CHUNK_SIZE_MB:-64}"             # Size of each chunk (64-128 MB recommended)
+MEMORY_NUM_KV_CHUNKS="${MEMORY_NUM_KV_CHUNKS:-32}"             # Number of chunks per request
+MEMORY_MR_RELAXED_ORDERING="${MEMORY_MR_RELAXED_ORDERING:-true}"     # Enable PCIe relaxed ordering for better BW
+MEMORY_MAX_CONCURRENT_REQUESTS="${MEMORY_MAX_CONCURRENT_REQUESTS:-8}"    # Max simultaneous KV transfers
+
 # Helper function to get full hostname
 get_full_hostname() {
     local node=$1
@@ -156,3 +200,31 @@ export GPU_MEMORY_UTILIZATION
 export TENSOR_PARALLEL_SIZE
 export VLLM_PATH
 export USE_GPU
+
+# Export YAML configuration variables
+export REPLICATION_FACTOR
+export NUMBER_OF_KEYS_HASHTABLE
+export SIZE_LOCAL_BUFFER
+export EVENT_QUEUE_SIZE
+export WORKER_POOL_SIZE
+export VNODES_NUMBER
+export NUM_LAYERS
+export NODE_GID_INDEX
+export NODE_MTU
+export NODE_SL
+export NODE_QP_MAX_SEND_WR
+export NODE_QP_MAX_RECV_WR
+export NODE_QP_MAX_INLINE_DATA
+export NODE_MAX_RD_ATOMIC
+export NODE_MIN_RNR_TIMER
+export NODE_TIMEOUT
+export NODE_RETRY_CNT
+export NODE_RNR_RETRY
+export NODE_CQ_DEPTH
+export NODE_ENABLE_PEER_ACCESS
+export NODE_REQUIRE_SAME_NUMA
+export MEMORY_KV_BUFFER_MB
+export MEMORY_CHUNK_SIZE_MB
+export MEMORY_NUM_KV_CHUNKS
+export MEMORY_MR_RELAXED_ORDERING
+export MEMORY_MAX_CONCURRENT_REQUESTS

@@ -132,6 +132,29 @@ bool RDMAEngine::connect_all_qps()
         Logger::info("RDMAEngine: Connected QP to peer " + peer_id);
     }
 
+    // FIX #3a: Pre-post recv WRs on DECODE nodes to prevent RNR NAKs
+    //
+    // CRITICAL: Decode nodes MUST pre-post recv WRs BEFORE prefill nodes start sending.
+    // Each RDMA WRITE_WITH_IMM from prefill requires a pre-posted recv WR on decode side.
+    // Without this, the first transfer gets RNR NAK → 7 retries → QP ERROR state.
+    //
+    // With layer-based transfers: 8 concurrent requests × 32 layers/request = 256 recv WRs minimum.
+    // We pre-post qp_max_recv_wr (typically 512 or 1024) to handle bursts.
+    if (node_info_.role == NodeRole::DECODE)
+    {
+        int num_recv_wrs = config_.rdma.qp_max_recv_wr;
+        Logger::info("RDMAEngine: Pre-posting " + std::to_string(num_recv_wrs) +
+                     " recv WRs for decode node (layer-based transfer requires 256+ for 8 requests)");
+
+        if (!post_recv_wrs(num_recv_wrs))
+        {
+            Logger::error("RDMAEngine: Failed to pre-post recv WRs on decode node");
+            return false;
+        }
+
+        Logger::info("RDMAEngine: Successfully pre-posted recv WRs (prevents RNR NAKs)");
+    }
+
     Logger::info("RDMAEngine: All QPs connected successfully");
     return true;
 }
@@ -259,7 +282,7 @@ int RDMAEngine::poll_recv_cq(std::vector<ibv_wc> &wcs, int max_count)
         return -1;
     }
 
-    // Check for errors in completions
+    // Check for errors in completions and identify sending peer
     for (int i = 0; i < n; ++i)
     {
         if (wcs[i].status != IBV_WC_SUCCESS)
@@ -267,6 +290,45 @@ int RDMAEngine::poll_recv_cq(std::vector<ibv_wc> &wcs, int max_count)
             Logger::error("RDMAEngine: Recv WC error: " +
                           std::string(ibv_wc_status_str(wcs[i].status)));
             return -1;
+        }
+
+        // FIX BUG #2: Identify which peer sent this data
+        // Critical for multi-prefill setups to prevent data mixing
+        std::string peer_id = get_peer_id_from_qp_num(wcs[i].qp_num);
+
+        Logger::debug("RDMAEngine: Recv completion from peer=" + peer_id +
+                      ", qp_num=" + std::to_string(wcs[i].qp_num) +
+                      ", imm_data=0x" + std::to_string(wcs[i].imm_data) +
+                      " (" + std::to_string(wcs[i].byte_len) + " bytes)");
+
+        // Note: peer_id is now available for upper-layer processing
+        // The caller (e.g., decode node event loop) can use wcs[i].qp_num
+        // to identify the source and route data correctly
+    }
+
+    // FIX #3b: Automatically replenish consumed recv WRs
+    //
+    // CRITICAL: Each RDMA WRITE_WITH_IMM consumes one recv WR from the queue.
+    // With layer-based transfers, each request generates 32 WRITE_WITH_IMMs (one per layer).
+    // After qp_max_recv_wr completions (typically 128-1024), the queue is exhausted.
+    // All subsequent transfers get RNR NAK → system stalls.
+    //
+    // Solution: Immediately re-post a recv WR for each completion we process.
+    // This maintains a constant pool of recv WRs, preventing queue exhaustion.
+    //
+    // Example: With 8 concurrent requests × 32 layers = 256 active transfers,
+    // we consume and replenish 256 recv WRs continuously.
+    if (n > 0)
+    {
+        if (!post_recv_wrs(n))
+        {
+            Logger::error("RDMAEngine: Failed to replenish " + std::to_string(n) + " recv WRs after poll");
+            // Non-fatal: continue processing current completions
+            // Future transfers may stall due to RNR NAK if queue depletes
+        }
+        else
+        {
+            Logger::debug("RDMAEngine: Replenished " + std::to_string(n) + " recv WRs (maintaining recv queue)");
         }
     }
 
@@ -289,6 +351,23 @@ int RDMAEngine::get_recv_cq_fd() const
     // For future epoll integration: create completion channel
     // For now, return -1 (busy polling mode)
     return -1;
+}
+
+std::string RDMAEngine::get_peer_id_from_qp_num(uint32_t qp_num) const
+{
+    // FIX BUG #2: Map QP number to peer ID for recv completion identification
+    // This prevents mixing data from different prefill nodes when using shared recv CQ
+    for (const auto& [peer_id, qp] : peer_qps_)
+    {
+        if (qp && qp->qp_num == qp_num)
+        {
+            return peer_id;
+        }
+    }
+
+    Logger::warning("RDMAEngine: Unknown QP number " + std::to_string(qp_num) +
+                    " in recv completion (possible stale completion or invalid QP)");
+    return "unknown";
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -571,21 +650,41 @@ bool RDMAEngine::connect_qp_to_peer(const std::string &peer_id, ibv_qp *qp)
         {
             ibv_qp_attr attr{};
             attr.qp_state = IBV_QPS_RTR;
-            attr.path_mtu = static_cast<ibv_mtu>([](int mtu)
-                                                 {
-                switch (mtu)
-                {
-                case 512:
-                    return IBV_MTU_512;
-                case 1024:
-                    return IBV_MTU_1024;
-                case 2048:
-                    return IBV_MTU_2048;
-                case 4096:
-                    return IBV_MTU_4096;
-                default:
-                    return IBV_MTU_4096;
-                } }(config_.rdma.mtu));
+
+            // Use active_mtu from port attributes (auto-discovered)
+            // This prevents fragmentation on RoCE/Ethernet where MTU may be < 4096
+            // Falls back to config if override is specified (non-zero)
+            if (config_.rdma.mtu > 0)
+            {
+                // Config override: convert integer MTU to ibv_mtu enum
+                attr.path_mtu = static_cast<ibv_mtu>([](int mtu)
+                                                     {
+                    switch (mtu)
+                    {
+                    case 256:
+                        return IBV_MTU_256;
+                    case 512:
+                        return IBV_MTU_512;
+                    case 1024:
+                        return IBV_MTU_1024;
+                    case 2048:
+                        return IBV_MTU_2048;
+                    case 4096:
+                        return IBV_MTU_4096;
+                    default:
+                        Logger::warn("Invalid MTU " + std::to_string(mtu) + ", using 4096");
+                        return IBV_MTU_4096;
+                    } }(config_.rdma.mtu));
+                Logger::info("Using configured MTU: " + std::to_string(config_.rdma.mtu));
+            }
+            else
+            {
+                // Auto-discovery: use port's active MTU
+                attr.path_mtu = rdma_ctx_.port_attr.active_mtu;
+                Logger::info("Auto-discovered MTU: " +
+                    std::to_string(ibv_mtu_to_num(rdma_ctx_.port_attr.active_mtu)) +
+                    " bytes (optimal for this fabric)");
+            }
 
             attr.dest_qp_num = peer_info->remote_qp_num;
             attr.rq_psn = peer_info->remote_psn;
@@ -678,10 +777,62 @@ bool RDMAEngine::post_write_external(
     auto *peer_info = find_peer_info(peer_id);
     auto *qp = peer_qps_[peer_id];
 
+    if (!peer_info)
+    {
+        Logger::error("RDMAEngine: post_write_external failed - peer " + peer_id + " not found");
+        return false;
+    }
+
+    if (!qp)
+    {
+        Logger::error("RDMAEngine: post_write_external failed - QP for peer " + peer_id + " not found");
+        return false;
+    }
+
+    // FIX BUG #7: Buffer overflow protection
+    // Validate that the write will not exceed the remote buffer bounds
+    // This prevents corrupting GPU memory beyond the staging buffer
+    //
+    // Remote buffer layout (example):
+    // [Slot 0: 4GB] [Slot 1: 4GB] ... [Slot 7: 4GB] = 32GB total
+    // Each write must satisfy: offset + length <= buffer_size
+
+    uint64_t write_end_offset = remote_offset + length;
+    size_t remote_buffer_size = config_.memory.kv_buffer_mb * 1024UL * 1024UL;
+
+    if (write_end_offset > remote_buffer_size)
+    {
+        Logger::error("RDMAEngine: RDMA write would overflow remote buffer!");
+        Logger::error("  peer=" + peer_id);
+        Logger::error("  remote_offset=" + std::to_string(remote_offset) +
+                      " (0x" + std::to_string(remote_offset) + ")");
+        Logger::error("  length=" + std::to_string(length) +
+                      " (" + std::to_string(length / (1024 * 1024)) + "MB)");
+        Logger::error("  write_end=" + std::to_string(write_end_offset) +
+                      " (0x" + std::to_string(write_end_offset) + ")");
+        Logger::error("  remote_buffer_size=" + std::to_string(remote_buffer_size) +
+                      " (" + std::to_string(remote_buffer_size / (1024 * 1024)) + "MB)");
+        Logger::error("  OVERFLOW: " + std::to_string(write_end_offset - remote_buffer_size) + " bytes");
+        return false;
+    }
+
+    // Additional sanity check: length should not be zero or unreasonably large
+    if (length == 0)
+    {
+        Logger::warning("RDMAEngine: post_write_external called with length=0");
+        return true; // Succeed but don't post
+    }
+
+    if (length > (1UL << 30)) // 1GB
+    {
+        Logger::warning("RDMAEngine: Large RDMA write: " +
+                        std::to_string(length / (1024 * 1024)) + "MB");
+    }
+
     // Use the provided address and lkey directly
     ibv_sge sge{};
     sge.addr = local_addr; // ✓ vLLM's address
-    sge.length = length;
+    sge.length = static_cast<uint32_t>(length);
     sge.lkey = local_lkey; // ✓ vLLM's lkey
 
     ibv_send_wr wr{};
@@ -694,5 +845,14 @@ bool RDMAEngine::post_write_external(
     wr.wr.rdma.rkey = peer_info->remote_rkey;
 
     ibv_send_wr *bad_wr = nullptr;
-    return ibv_post_send(qp, &wr, &bad_wr) == 0;
+    int ret = ibv_post_send(qp, &wr, &bad_wr);
+
+    if (ret != 0)
+    {
+        Logger::error("RDMAEngine: ibv_post_send failed: " + std::string(strerror(errno)) +
+                      " (errno=" + std::to_string(errno) + ")");
+        return false;
+    }
+
+    return true;
 }

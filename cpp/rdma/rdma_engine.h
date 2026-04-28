@@ -142,6 +142,13 @@ public:
     RdmaContext &get_context() { return rdma_ctx_; }
     const RdmaContext &get_context() const { return rdma_ctx_; }
 
+    /**
+     * Get peer ID from QP number (for recv completion identification)
+     * @param qp_num QP number from work completion
+     * @return Peer node ID, or "unknown" if not found
+     */
+    std::string get_peer_id_from_qp_num(uint32_t qp_num) const;
+
 private:
     // Configuration
     Config &config_;

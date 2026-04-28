@@ -18,7 +18,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Find dependencies
-find_package(pybind11 REQUIRED)
+find_package(pybind11 QUIET)
+if(pybind11_FOUND)
+    message(STATUS "pybind11 found - Python bindings will be built")
+    set(BUILD_PYTHON_BINDINGS ON)
+else()
+    message(STATUS "pybind11 not found - Python bindings will be skipped")
+    set(BUILD_PYTHON_BINDINGS OFF)
+endif()
 
 if(ENABLE_GPU_DIRECT)
     find_package(CUDA REQUIRED)
@@ -43,7 +50,7 @@ message(STATUS "Found libibverbs: ${IBVERBS_LIB}")
 message(STATUS "Found librdmacm: ${RDMACM_LIB}")
 
 # Include directories
-include_directories(${CMAKE_SOURCE_DIR}/cpp/include)
+include_directories(${CMAKE_SOURCE_DIR}/cpp)
 if(ENABLE_GPU_DIRECT)
     include_directories(${CUDA_INCLUDE_DIRS})
 endif()

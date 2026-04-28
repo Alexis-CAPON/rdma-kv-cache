@@ -57,6 +57,8 @@ namespace
     {
         switch (mtu)
         {
+        case 256:
+            return IBV_MTU_256;
         case 512:
             return IBV_MTU_512;
         case 1024:
@@ -66,8 +68,9 @@ namespace
         case 4096:
             return IBV_MTU_4096;
         default:
-            throw std::runtime_error(
-                "Invalid MTU value: " + std::to_string(mtu));
+            std::cerr << "[WARNING] Invalid MTU value: " << mtu
+                      << ", using 4096\n";
+            return IBV_MTU_4096;
         }
     }
 
@@ -564,7 +567,23 @@ void connect_qp(RdmaContext &ctx, const RdmaConfig &rcfg)
     {
         ibv_qp_attr attr{};
         attr.qp_state = IBV_QPS_RTR;
-        attr.path_mtu = mtu_to_enum(rcfg.mtu);
+
+        // Use active_mtu from port attributes (auto-discovered)
+        // This prevents fragmentation on RoCE/Ethernet where MTU may be < 4096
+        // Falls back to config if override is specified (non-zero)
+        if (rcfg.mtu > 0)
+        {
+            attr.path_mtu = mtu_to_enum(rcfg.mtu);
+            std::cout << "[QP] Using configured MTU: " << rcfg.mtu << "\n";
+        }
+        else
+        {
+            attr.path_mtu = ctx.port_attr.active_mtu;
+            std::cout << "[QP] Auto-discovered MTU: "
+                      << ibv_mtu_to_num(ctx.port_attr.active_mtu)
+                      << " bytes (optimal for this fabric)\n";
+        }
+
         attr.dest_qp_num = ctx.remote_addr.qpn;
         attr.rq_psn = ctx.remote_addr.psn;
         attr.max_dest_rd_atomic = static_cast<uint8_t>(rcfg.max_rd_atomic);

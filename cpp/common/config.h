@@ -20,7 +20,7 @@ struct RdmaConfig
     int gid_index = 0;                   // 0=IB, 3=RoCEv2
 
     // QP parameters
-    int mtu = 4096;              // Path MTU (512/1024/2048/4096)
+    int mtu = 0;                 // Path MTU: 0=auto-discover from port, or override with 256/512/1024/2048/4096
     int sl = 0;                  // Service Level
     int qp_max_send_wr = 64;     // Max outstanding send WRs
     int qp_max_recv_wr = 64;     // Max outstanding recv WRs

@@ -180,26 +180,31 @@ void Worker::handle_client_request(int client_fd, Message *msg)
     // Generate request ID
     uint64_t transaction_id = generate_transaction_id();
 
-    // Select a prefill and decode node to assign this request to (e.g., simple round-robin or more advanced load balancing)
-    auto selected_prefill_node = request_router_.select_prefill_node();
-    auto selected_decode_node = request_router_.select_decode_node_for_prefill(selected_prefill_node ? selected_prefill_node->node_id : "");
+    // NEW: Use router's integrated slot allocation
+    // This atomically selects prefill node, decode node, and allocates memory slot
+    auto routing = request_router_.select_nodes_and_allocate_slot(msg->request_info.request_id);
 
-    if (!selected_prefill_node || !selected_decode_node)
+    if (!routing)
     {
-        Logger::error("No healthy nodes available to handle request_id=" + msg->request_info.request_id);
-        Message error_response = Message::create_error("No healthy nodes available. Please try again later.");
+        Logger::error("No healthy nodes with available slots for request_id=" + msg->request_info.request_id);
+        Message error_response = Message::create_error(
+            "All nodes at capacity. Please try again later.");
         send_client_response(client_fd, error_response);
         return;
     }
 
-    // Create a new RequestInfo object
-
+    // Create RequestInfo with slot information
     RequestInfo request_info;
     request_info.request_id = msg->request_info.request_id;
     request_info.prompt = msg->request_info.prompt;
     request_info.max_tokens = msg->request_info.max_tokens;
-    request_info.prefill_node_id = selected_prefill_node->node_id;
-    request_info.decode_node_id = selected_decode_node->node_id;
+    request_info.prefill_node_id = routing->prefill_node.node_id;
+    request_info.decode_node_id = routing->decode_node.node_id;
+
+    // NEW: Include slot allocation info
+    request_info.slot_id = routing->slot_id;
+    request_info.slot_base_offset = routing->slot_base_offset;
+
     request_info.timestamp_created = std::chrono::system_clock::now().time_since_epoch().count();
 
     // Create a new request entry in the RequestTracker using the RequestInfo and client_fd for response delivery later
@@ -208,20 +213,24 @@ void Worker::handle_client_request(int client_fd, Message *msg)
     // Send an ASSIGN_REQUEST message to the selected prefill node with the request details and the selected decode node info
     Message assign_msg = Message::create_assign_request(config_.orchestrator_id, request_info);
 
-    auto prefill_fd = node_registry_.get_node_fd(selected_prefill_node->node_id);
+    auto prefill_fd = node_registry_.get_node_fd(routing->prefill_node.node_id);
     if (!prefill_fd)
     {
-        Logger::error("Failed to find prefill node fd for node_id=" + selected_prefill_node->node_id);
+        Logger::error("Failed to find prefill node fd for node_id=" + routing->prefill_node.node_id);
+        // Free slot on error
+        request_router_.free_slot(request_info.request_id);
         return;
     }
     send_server_response(prefill_fd.value(), assign_msg);
 
-    request_router_.increment_node_load(selected_prefill_node->node_id);
-    request_router_.increment_node_load(selected_decode_node->node_id);
+    request_router_.increment_node_load(routing->prefill_node.node_id);
+    request_router_.increment_node_load(routing->decode_node.node_id);
 
     Logger::info("Assigned request_id=" + request_info.request_id +
-                 " to prefill_node_id=" + selected_prefill_node->node_id +
-                 " and decode_node_id=" + selected_decode_node->node_id);
+                 " to prefill=" + routing->prefill_node.node_id +
+                 ", decode=" + routing->decode_node.node_id +
+                 ", slot=" + std::to_string(routing->slot_id) +
+                 ", offset=0x" + std::to_string(routing->slot_base_offset));
 
     // Note: The prefill node will then handle the ASSIGN_REQUEST, start the prefill phase, and upon completion, it will send a DECODE_COMPLETE message to the decode node to trigger the decode phase. The prefill node will also update the RequestTracker with the status changes
 };
@@ -338,6 +347,13 @@ void Worker::handle_decode_complete(int server_fd, Message *msg)
     // Update the RequestTracker with the decode completion status for this request
     request_tracker_orchestrator_.update_status(msg->request_info.request_id, RequestStatus::COMPLETED);
 
+    // NEW: Free slot allocation for this request
+    request_router_.free_slot(msg->request_info.request_id);
+
+    // Decrement load tracking
+    request_router_.decrement_node_load(msg->request_info.prefill_node_id);
+    request_router_.decrement_node_load(msg->request_info.decode_node_id);
+
     // Send the generated response back to the client
     auto client_fd = request_tracker_orchestrator_.get_client_fd(msg->request_info.request_id);
     if (client_fd)
@@ -361,6 +377,13 @@ void Worker::handle_request_failed(int server_fd, Message *msg)
                   " error_message=" + msg->error_message);
     // Update the RequestTracker with the failure status for this request
     request_tracker_orchestrator_.update_status(msg->request_info.request_id, RequestStatus::FAILED);
+
+    // NEW: Free slot allocation for failed request
+    request_router_.free_slot(msg->request_info.request_id);
+
+    // Decrement load tracking
+    request_router_.decrement_node_load(msg->request_info.prefill_node_id);
+    request_router_.decrement_node_load(msg->request_info.decode_node_id);
 
     // Send an error response back to the client
     auto client_fd = request_tracker_orchestrator_.get_client_fd(msg->request_info.request_id);
@@ -470,6 +493,9 @@ void Worker::handle_broadcast_member_info(Message *msg)
         {
             if (qmap.peer_node_id == peer.node_id)
             {
+                // FIX BUG #5: Validate that peer provides QP info for us
+                bool found = false;
+
                 // Find the QP info that peer created for US
                 for (const auto &peer_qmap : peer.qmaps)
                 {
@@ -483,11 +509,37 @@ void Worker::handle_broadcast_member_info(Message *msg)
                         qmap.remote_rkey = peer.rkey;
                         qmap.remote_addr = peer.gpu_base_addr;
 
-                        Logger::info("Filled remote QP info for peer " +
-                                     qmap.peer_node_id);
+                        Logger::info("Filled remote QP info for peer " + qmap.peer_node_id);
+                        found = true;
                         break;
                     }
                 }
+
+                // FIX BUG #5: Validate QP info was found
+                if (!found)
+                {
+                    Logger::error("CRITICAL: Peer " + peer.node_id +
+                                  " did not provide QP info for this node (" + node_info_.node_id + ")");
+                    Logger::error("Peer's qmaps contains " + std::to_string(peer.qmaps.size()) + " entries:");
+                    for (const auto& pqmap : peer.qmaps)
+                    {
+                        Logger::error("  - peer_node_id=" + pqmap.peer_node_id +
+                                      ", local_qp_num=" + std::to_string(pqmap.local_qp_num));
+                    }
+                    throw std::runtime_error("QP info exchange failed: peer " + peer.node_id +
+                                           " missing QP mapping for " + node_info_.node_id);
+                }
+
+                // FIX BUG #5: Validate QP number is non-zero
+                if (qmap.remote_qp_num == 0)
+                {
+                    Logger::error("CRITICAL: Invalid remote_qp_num=0 for peer " + peer.node_id);
+                    throw std::runtime_error("Invalid QP number (0) received from peer " + peer.node_id);
+                }
+
+                Logger::debug("Validated remote QP info for peer " + peer.node_id +
+                              ": remote_qp_num=" + std::to_string(qmap.remote_qp_num) +
+                              ", remote_lid=" + std::to_string(qmap.remote_lid));
             }
         }
     }

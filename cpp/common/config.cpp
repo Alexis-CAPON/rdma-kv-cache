@@ -50,7 +50,7 @@ Config Config::fromFile(const std::string &path)
     config.number_of_keys_hashtable = yaml["number_of_keys_hashtable"] ? yaml["number_of_keys_hashtable"].as<uint32_t>() : 10000;
     config.size_local_buffer = yaml["size_local_buffer"] ? yaml["size_local_buffer"].as<size_t>() : 1024;
     config.client_event_queue_size = yaml["event_queue_size"] ? yaml["event_queue_size"].as<size_t>() : 1000;
-    config.monitoring_event_queue_size = yaml["event_queue_size"] ? yaml["event_queue_size"].as<size_t>() : 1000;
+    // config.monitoring_event_queue_size = yaml["event_queue_size"] ? yaml["event_queue_size"].as<size_t>() : 1000;  // Field doesn't exist in Config class
     config.worker_pool_size = yaml["worker_pool_size"] ? yaml["worker_pool_size"].as<uint32_t>() : 4;
 
     config.orchestrator_host = yaml["orchestrator_host"].as<std::string>();

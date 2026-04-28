@@ -82,24 +82,24 @@ target_include_directories(rdma_engine PUBLIC
 )
 
 # ============================================================================
-# vLLM Integration Library
+# vLLM Integration Library (optional - commented out if files don't exist)
 # ============================================================================
 
-add_library(vllm_integration STATIC
-    nodes/vllm_client.cpp
-    nodes/kv_rdma_manager.cpp
-)
-
-target_link_libraries(vllm_integration
-    PUBLIC
-        common
-        rdma_engine
-        nlohmann_json::nlohmann_json
-)
-
-target_include_directories(vllm_integration PUBLIC
-    ${CMAKE_SOURCE_DIR}
-)
+# add_library(vllm_integration STATIC
+#     nodes/vllm_client.cpp
+#     nodes/kv_rdma_manager.cpp
+# )
+#
+# target_link_libraries(vllm_integration
+#     PUBLIC
+#         common
+#         rdma_engine
+#         nlohmann_json::nlohmann_json
+# )
+#
+# target_include_directories(vllm_integration PUBLIC
+#     ${CMAKE_SOURCE_DIR}
+# )
 
 # ============================================================================
 # Node Components
@@ -111,6 +111,7 @@ add_library(nodes STATIC
     nodes/epoll_worker.cpp
     nodes/worker_pool.cpp
     nodes/request_tracker.cpp
+    nodes/request_tracker_layer.cpp  # NEW: Layer-based request tracking
 )
 
 target_link_libraries(nodes
@@ -118,7 +119,7 @@ target_link_libraries(nodes
         common
         network
         rdma_engine
-        vllm_integration
+        # vllm_integration  # commented out - optional library
 )
 
 # ============================================================================
@@ -144,29 +145,29 @@ target_link_libraries(orchestrator
 
 # Prefill Node
 add_executable(prefill_node
-    apps/prefill_main.cpp
+    apps/prefill/prefill_main.cpp
 )
 
 target_link_libraries(prefill_node
     PRIVATE
         nodes
-        vllm_integration
+        # vllm_integration  # commented out - optional library
 )
 
 # Decode Node
 add_executable(decode_node
-    apps/decode_main.cpp
+    apps/decode/decode_main.cpp
 )
 
 target_link_libraries(decode_node
     PRIVATE
         nodes
-        vllm_integration
+        # vllm_integration  # commented out - optional library
 )
 
 # Benchmark Client
 add_executable(benchmark_client
-    apps/benchmark_client.cpp
+    apps/client/benchmark_client.cpp
 )
 
 target_link_libraries(benchmark_client
@@ -182,15 +183,22 @@ install(TARGETS orchestrator prefill_node decode_node benchmark_client
     RUNTIME DESTINATION bin
 )
 
-install(TARGETS vllm_integration rdma_engine nodes network common
+install(TARGETS rdma_engine nodes network common
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
+
+# install(TARGETS vllm_integration
+#     LIBRARY DESTINATION lib
+#     ARCHIVE DESTINATION lib
+# )
 
 # ============================================================================
 # Python Bindings (Optional)
 # ============================================================================
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bindings/CMakeLists.txt)
+if(BUILD_PYTHON_BINDINGS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bindings/CMakeLists.txt)
     add_subdirectory(bindings)
+else()
+    message(STATUS "Skipping Python bindings subdirectory")
 endif()

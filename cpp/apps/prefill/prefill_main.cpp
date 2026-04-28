@@ -8,7 +8,7 @@
 #include "cpp/common/logger.h"
 #include "cpp/nodes/node.h"
 #include <yaml-cpp/yaml.h>
-#include "cpp/bindings/node_accessor.cpp"
+#include "cpp/bindings/node_accessor.h"
 
 using namespace std;
 

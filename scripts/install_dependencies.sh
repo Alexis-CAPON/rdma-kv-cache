@@ -32,7 +32,8 @@ sudo apt-get install -y \
     pkg-config \
     autoconf \
     automake \
-    libtool
+    libtool \
+    pybind11-dev
 
 # ============================================
 # 3. RDMA/InfiniBand Core Libraries
@@ -115,11 +116,23 @@ if [ "${USE_GPU:-true}" = "true" ]; then
             cd nv_peer_memory
 
             # Build and install
-            ./build_module.sh
-            cd /tmp
-            tar xzf /tmp/nvidia-peer-memory_*.tar.gz
-            cd nvidia-peer-memory-*
-            sudo ./install.sh
+            if ./build_module.sh; then
+                cd /tmp
+                if tar xzf /tmp/nvidia-peer-memory_*.tar.gz 2>/dev/null; then
+                    cd nvidia-peer-memory-* 2>/dev/null || true
+                    if [ -f ./install.sh ]; then
+                        sudo ./install.sh
+                    else
+                        echo "  WARNING: install.sh not found, attempting manual DKMS install..."
+                        # Try DKMS approach instead
+                        sudo dpkg-buildpackage -us -uc 2>/dev/null || true
+                    fi
+                else
+                    echo "  WARNING: nvidia-peer-memory tarball not found, skipping..."
+                fi
+            else
+                echo "  WARNING: build_module.sh failed, skipping nvidia-peermem..."
+            fi
 
             # Load module
             sudo modprobe nvidia-peermem || echo "  Failed to load nvidia-peermem"

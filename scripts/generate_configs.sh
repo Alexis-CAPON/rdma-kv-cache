@@ -63,19 +63,19 @@ orchestrator_host: "${ORCHESTRATOR_HOST}"
 orchestrator_port: ${ORCHESTRATOR_PORT}
 
 # Cluster settings
-replication_factor: 3
-number_of_keys_hashtable: 10000
-size_local_buffer: 1024
-event_queue_size: 1000
-worker_pool_size: 4
-vnodes_number: 1
+replication_factor: ${REPLICATION_FACTOR}
+number_of_keys_hashtable: ${NUMBER_OF_KEYS_HASHTABLE}
+size_local_buffer: ${SIZE_LOCAL_BUFFER}
+event_queue_size: ${EVENT_QUEUE_SIZE}
+worker_pool_size: ${WORKER_POOL_SIZE}
+vnodes_number: ${VNODES_NUMBER}
 
-num_layers: 32
+num_layers: ${NUM_LAYERS}
 
 # Transfer backend selection
 # use_gpu: true  -> GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
 # use_gpu: false -> Standard RDMA via MooncakeConnector (no GPU required)
-use_gpu: ${USE_GPU:-true}
+use_gpu: ${USE_GPU}
 
 # Orchestrator specific settings
 orchestrator:
@@ -189,54 +189,54 @@ vllm_port: ${VLLM_PORT}
 model_name: "${MODEL_NAME}"
 
 # Cluster settings
-replication_factor: 3
-number_of_keys_hashtable: 10000
-size_local_buffer: 1024
-event_queue_size: 1000
-worker_pool_size: 4
-vnodes_number: 1
+replication_factor: ${REPLICATION_FACTOR}
+number_of_keys_hashtable: ${NUMBER_OF_KEYS_HASHTABLE}
+size_local_buffer: ${SIZE_LOCAL_BUFFER}
+event_queue_size: ${EVENT_QUEUE_SIZE}
+worker_pool_size: ${WORKER_POOL_SIZE}
+vnodes_number: ${VNODES_NUMBER}
 
-num_layers: 32
+num_layers: ${NUM_LAYERS}
 
 # Transfer backend selection
 # use_gpu: true  -> GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
 # use_gpu: false -> Standard RDMA via MooncakeConnector (no GPU required)
-use_gpu: ${USE_GPU:-true}
+use_gpu: ${USE_GPU}
 
 # Node configuration
 node:
   role: "prefill"
 
   # InfiniBand / RDMA fabric
-  ib_port: 1              # Physical IB port (usually 1)
-  gid_index: 0            # 0=IB, 3=RoCEv2
-  mtu: 4096               # Path MTU: 512/1024/2048/4096
-  sl: 0                   # Service Level
+  ib_port: ${IB_PORT}              # Physical IB port (usually 1)
+  gid_index: ${NODE_GID_INDEX}            # 0=IB, 3=RoCEv2
+  mtu: ${NODE_MTU}               # Path MTU: 512/1024/2048/4096
+  sl: ${NODE_SL}                   # Service Level
 
   # QP Tuning
-  qp_max_send_wr: 64
-  qp_max_recv_wr: 64
-  qp_max_inline_data: 64
-  max_rd_atomic: 16
-  min_rnr_timer: 12       # ~0.64 ms
-  timeout: 14             # local ACK timeout (~67 ms)
-  retry_cnt: 7
-  rnr_retry: 7            # 7 = infinite
+  qp_max_send_wr: ${NODE_QP_MAX_SEND_WR}
+  qp_max_recv_wr: ${NODE_QP_MAX_RECV_WR}
+  qp_max_inline_data: ${NODE_QP_MAX_INLINE_DATA}
+  max_rd_atomic: ${NODE_MAX_RD_ATOMIC}
+  min_rnr_timer: ${NODE_MIN_RNR_TIMER}       # ~0.64 ms
+  timeout: ${NODE_TIMEOUT}             # local ACK timeout (~67 ms)
+  retry_cnt: ${NODE_RETRY_CNT}
+  rnr_retry: ${NODE_RNR_RETRY}            # 7 = infinite
 
   # Completion Queue
-  cq_depth: 128
+  cq_depth: ${NODE_CQ_DEPTH}
 
   # GPU selection
-  enable_peer_access: true    # Enable P2P between GPUs
-  require_same_numa: false    # Require GPU and HCA on same NUMA node
+  enable_peer_access: ${NODE_ENABLE_PEER_ACCESS}    # Enable P2P between GPUs
+  require_same_numa: ${NODE_REQUIRE_SAME_NUMA}    # Require GPU and HCA on same NUMA node
 
 # Memory Configuration
 memory:
-  kv_buffer_mb: 16384           # Total GPU memory buffer (16 GB)
-  chunk_size_mb: 64             # Size of each chunk (64-128 MB recommended)
-  num_kv_chunks: 32             # Number of chunks per request
-  mr_relaxed_ordering: true     # Enable PCIe relaxed ordering for better BW
-  max_concurrent_requests: 8    # Max simultaneous KV transfers
+  kv_buffer_mb: ${MEMORY_KV_BUFFER_MB}           # Total GPU memory buffer (16 GB)
+  chunk_size_mb: ${MEMORY_CHUNK_SIZE_MB}             # Size of each chunk (64-128 MB recommended)
+  num_kv_chunks: ${MEMORY_NUM_KV_CHUNKS}             # Number of chunks per request
+  mr_relaxed_ordering: ${MEMORY_MR_RELAXED_ORDERING}     # Enable PCIe relaxed ordering for better BW
+  max_concurrent_requests: ${MEMORY_MAX_CONCURRENT_REQUESTS}    # Max simultaneous KV transfers
 
 # Prefill nodes list
 prefill_nodes:
@@ -348,54 +348,54 @@ vllm_port: ${VLLM_PORT}
 model_name: "${MODEL_NAME}"
 
 # Cluster settings
-replication_factor: 3
-number_of_keys_hashtable: 10000
-size_local_buffer: 1024
-event_queue_size: 1000
-worker_pool_size: 4
-vnodes_number: 1
+replication_factor: ${REPLICATION_FACTOR}
+number_of_keys_hashtable: ${NUMBER_OF_KEYS_HASHTABLE}
+size_local_buffer: ${SIZE_LOCAL_BUFFER}
+event_queue_size: ${EVENT_QUEUE_SIZE}
+worker_pool_size: ${WORKER_POOL_SIZE}
+vnodes_number: ${VNODES_NUMBER}
 
-num_layers: 32
+num_layers: ${NUM_LAYERS}
 
 # Transfer backend selection
 # use_gpu: true  -> GPUDirect RDMA (RDMAConnector, requires nvidia-peermem + A100-class GPU)
 # use_gpu: false -> Standard RDMA via MooncakeConnector (no GPU required)
-use_gpu: ${USE_GPU:-true}
+use_gpu: ${USE_GPU}
 
 # Node configuration
 node:
   role: "decode"
 
   # InfiniBand / RDMA fabric
-  ib_port: 1              # Physical IB port (usually 1)
-  gid_index: 0            # 0=IB, 3=RoCEv2
-  mtu: 4096               # Path MTU: 512/1024/2048/4096
-  sl: 0                   # Service Level
+  ib_port: ${IB_PORT}              # Physical IB port (usually 1)
+  gid_index: ${NODE_GID_INDEX}            # 0=IB, 3=RoCEv2
+  mtu: ${NODE_MTU}               # Path MTU: 512/1024/2048/4096
+  sl: ${NODE_SL}                   # Service Level
 
   # QP Tuning
-  qp_max_send_wr: 64
-  qp_max_recv_wr: 64
-  qp_max_inline_data: 64
-  max_rd_atomic: 16
-  min_rnr_timer: 12       # ~0.64 ms
-  timeout: 14             # local ACK timeout (~67 ms)
-  retry_cnt: 7
-  rnr_retry: 7            # 7 = infinite
+  qp_max_send_wr: ${NODE_QP_MAX_SEND_WR}
+  qp_max_recv_wr: ${NODE_QP_MAX_RECV_WR}
+  qp_max_inline_data: ${NODE_QP_MAX_INLINE_DATA}
+  max_rd_atomic: ${NODE_MAX_RD_ATOMIC}
+  min_rnr_timer: ${NODE_MIN_RNR_TIMER}       # ~0.64 ms
+  timeout: ${NODE_TIMEOUT}             # local ACK timeout (~67 ms)
+  retry_cnt: ${NODE_RETRY_CNT}
+  rnr_retry: ${NODE_RNR_RETRY}            # 7 = infinite
 
   # Completion Queue
-  cq_depth: 128
+  cq_depth: ${NODE_CQ_DEPTH}
 
   # GPU selection
-  enable_peer_access: true    # Enable P2P between GPUs
-  require_same_numa: false    # Require GPU and HCA on same NUMA node
+  enable_peer_access: ${NODE_ENABLE_PEER_ACCESS}    # Enable P2P between GPUs
+  require_same_numa: ${NODE_REQUIRE_SAME_NUMA}    # Require GPU and HCA on same NUMA node
 
 # Memory Configuration
 memory:
-  kv_buffer_mb: 16384           # Total GPU memory buffer (16 GB)
-  chunk_size_mb: 64             # Size of each chunk (64-128 MB recommended)
-  num_kv_chunks: 32             # Number of chunks per request
-  mr_relaxed_ordering: true     # Enable PCIe relaxed ordering for better BW
-  max_concurrent_requests: 8    # Max simultaneous KV transfers
+  kv_buffer_mb: ${MEMORY_KV_BUFFER_MB}           # Total GPU memory buffer (16 GB)
+  chunk_size_mb: ${MEMORY_CHUNK_SIZE_MB}             # Size of each chunk (64-128 MB recommended)
+  num_kv_chunks: ${MEMORY_NUM_KV_CHUNKS}             # Number of chunks per request
+  mr_relaxed_ordering: ${MEMORY_MR_RELAXED_ORDERING}     # Enable PCIe relaxed ordering for better BW
+  max_concurrent_requests: ${MEMORY_MAX_CONCURRENT_REQUESTS}    # Max simultaneous KV transfers
 
 # Prefill nodes list
 prefill_nodes:

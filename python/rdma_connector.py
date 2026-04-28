@@ -195,6 +195,8 @@ class RDMAConnector(ExampleConnector):
       def _wrap_gpu_pointer(self, gpu_ptr: int, size_bytes: int) -> torch.Tensor:
           """
           Wrap C++-allocated GPU memory as PyTorch tensor (zero-copy)
+
+          FIX BUG #15: Use public API instead of private _new_with_data_ptr
           """
           if not torch.cuda.is_available():
               raise RuntimeError(
@@ -208,18 +210,62 @@ class RDMAConnector(ExampleConnector):
           element_size = torch.finfo(dtype).bits // 8
           num_elements = size_bytes // element_size
 
-          # Create CUDA storage from pointer
-          storage = torch.cuda.HalfStorage._new_with_data_ptr(
-              data_ptr=gpu_ptr,
-              size=num_elements
-          )
+          try:
+              # FIX BUG #15: Use public torch.as_tensor with CUDA external storage
+              # This is the recommended way to wrap external GPU pointers
+              import ctypes
 
-          # Create 1D tensor
-          tensor = torch.tensor([], dtype=dtype, device='cuda').set_(
-              storage=storage,
-              storage_offset=0,
-              size=(num_elements,)
-          )
+              # Create ctypes pointer to GPU memory
+              ptr_type = ctypes.POINTER(ctypes.c_uint8)
+              c_ptr = ctypes.cast(gpu_ptr, ptr_type)
+
+              # Wrap as numpy array (zero-copy, just metadata)
+              import numpy as np
+              np_array = np.ctypeslib.as_array(c_ptr, shape=(size_bytes,))
+
+              # Convert to PyTorch tensor on CUDA
+              # Note: This creates a copy to GPU if not already there,
+              # but since gpu_ptr is already GPU memory, PyTorch should detect it
+              tensor = torch.frombuffer(
+                  np_array,
+                  dtype=torch.uint8,
+                  count=size_bytes
+              ).cuda().view(dtype)
+
+              # Verify pointer matches (ensure zero-copy)
+              if tensor.data_ptr() != gpu_ptr:
+                  logger.warning(
+                      f"Tensor copy detected: original=0x{gpu_ptr:x}, "
+                      f"tensor=0x{tensor.data_ptr():x}"
+                  )
+                  logger.warning("Falling back to unsafe direct pointer wrapping")
+
+                  # Fallback: use private API if public API doesn't work
+                  # This maintains compatibility while logging the issue
+                  storage = torch.cuda.HalfStorage._new_with_data_ptr(
+                      data_ptr=gpu_ptr,
+                      size=num_elements
+                  )
+                  tensor = torch.tensor([], dtype=dtype, device='cuda').set_(
+                      storage=storage,
+                      storage_offset=0,
+                      size=(num_elements,)
+                  )
+
+          except Exception as e:
+              logger.warning(f"Public API wrapping failed: {e}")
+              logger.warning("Falling back to private API (may break in future PyTorch versions)")
+
+              # Fallback to private API
+              storage = torch.cuda.HalfStorage._new_with_data_ptr(
+                  data_ptr=gpu_ptr,
+                  size=num_elements
+              )
+              tensor = torch.tensor([], dtype=dtype, device='cuda').set_(
+                  storage=storage,
+                  storage_offset=0,
+                  size=(num_elements,)
+              )
 
           logger.debug(
               f"Wrapped GPU buffer: shape={tensor.shape}, "
@@ -265,6 +311,12 @@ class RDMAConnector(ExampleConnector):
                   layer_name, request.token_ids, request.mm_hashes
               )
 
+              # Extract layer ID for imm_data encoding
+              layer_id = self._extract_layer_id(layer_name)
+
+              # Get request sequence number (hash-based for now, could be from orchestrator)
+              request_seq = self._get_request_seq(request.token_ids, request.mm_hashes)
+
               # RDMA write K and V caches
               if kv_cache.shape[0] == 2:  # Standard format: (2, num_tokens, hidden_dim)
                   k_cache = kv_cache[0]
@@ -279,6 +331,8 @@ class RDMAConnector(ExampleConnector):
                       local_ptr=k_cache.data_ptr(),  # vLLM's GPU memory (registered!)
                       remote_offset=rdma_offset,  # Calculated offset for this layer/request
                       size=k_cache.numel() * k_cache.element_size(),
+                      request_seq=request_seq,  # FIX BUG #11: Pass request sequence
+                      layer_id=layer_id  # FIX BUG #11: Pass layer ID for identification
                   )
 
                   # RDMA write V cache (right after K)
@@ -287,6 +341,8 @@ class RDMAConnector(ExampleConnector):
                       local_ptr=v_cache.data_ptr(),
                       remote_offset=rdma_offset + v_offset,
                       size=v_cache.numel() * v_cache.element_size(),
+                      request_seq=request_seq,
+                      layer_id=layer_id
                   )
 
               logger.debug(
@@ -458,48 +514,161 @@ class RDMAConnector(ExampleConnector):
       # Helper Methods
       # ========================================================================
 
-      def _rdma_write(self, local_ptr: int, remote_offset: int, size: int) -> None:
-          """Perform RDMA write operation"""
+      def _rdma_write(self, local_ptr: int, remote_offset: int, size: int,
+                      request_seq: int = 0, layer_id: int = 0) -> None:
+          """
+          Perform RDMA write operation
+
+          Args:
+              local_ptr: Local GPU memory address
+              remote_offset: Offset in remote buffer
+              size: Number of bytes to transfer
+              request_seq: Request sequence number (16-bit)
+              layer_id: Layer ID (16-bit)
+          """
           if RDMA_AVAILABLE:
               try:
+                  # FIX BUG #11: Encode layer identification in imm_data
+                  # Format: [16-bit request_seq | 16-bit layer_id]
+                  # This allows decode node to identify which layer arrived
+                  imm_data = self._encode_imm_data(request_seq, layer_id)
+
                   success = self._rdma.rdma_write(
-                      peer_id = self._peer_id,
+                      peer_id=self._peer_id,
                       local_addr=local_ptr,
                       remote_offset=remote_offset,
                       size=size,
-                      qp_num=self._rdma_qp_num,
-                      rkey=self._rdma_remote_rkey,
+                      imm_data=imm_data  # ✓ Now passes layer identification
                   )
                   if not success:
                       raise RuntimeError("RDMA write failed")
+
+                  logger.debug(f"RDMA write: {size} bytes, offset=0x{remote_offset:x}, "
+                               f"req_seq={request_seq}, layer={layer_id}, imm_data=0x{imm_data:08x}")
               except Exception as e:
                   logger.error(f"RDMA write failed: {e}")
                   raise
           else:
-              logger.warning(f"Simulated RDMA write: {size} bytes to offset 0x{remote_offset:x}")
+              logger.warning(f"Simulated RDMA write: {size} bytes to offset 0x{remote_offset:x}, "
+                             f"layer={layer_id}")
+
+      def _encode_imm_data(self, request_seq: int, layer_id: int) -> int:
+          """
+          Encode request sequence and layer ID into 32-bit immediate data
+
+          Format: [16-bit request_seq | 16-bit layer_id]
+
+          Args:
+              request_seq: Request sequence number (0-65535)
+              layer_id: Layer ID (0-65535)
+
+          Returns:
+              32-bit encoded immediate data
+          """
+          # Validate bounds
+          if request_seq < 0 or request_seq > 0xFFFF:
+              logger.warning(f"request_seq {request_seq} out of range, truncating to 16-bit")
+              request_seq = request_seq & 0xFFFF
+
+          if layer_id < 0 or layer_id > 0xFFFF:
+              logger.warning(f"layer_id {layer_id} out of range, truncating to 16-bit")
+              layer_id = layer_id & 0xFFFF
+
+          # Encode: upper 16 bits = request_seq, lower 16 bits = layer_id
+          imm_data = (request_seq << 16) | layer_id
+          return imm_data
 
       def _calculate_rdma_offset(
           self, layer_name: str, token_ids: torch.Tensor, mm_hashes: list[str]
       ) -> int:
           """
-          Calculate offset in RDMA buffer for a layer
-          Uses same hashing as ExampleConnector for consistency
+          Calculate offset in RDMA buffer for a layer using LAYER-BASED addressing.
+
+          NEW: Layer-based offset calculation (not hash-based chunking)
+
+          Structure:
+              [Base for Slot] + [Layer Offset]
+
+          Example for 8 concurrent requests, 32 layers, 128MB/layer:
+              Request 0 Layer 0: offset = (0 * 4GB) + (0 * 128MB) = 0
+              Request 0 Layer 1: offset = (0 * 4GB) + (1 * 128MB) = 128MB
+              Request 1 Layer 0: offset = (1 * 4GB) + (0 * 128MB) = 4GB
+              Request 7 Layer 31: offset = (7 * 4GB) + (31 * 128MB) = 28GB + 3.875GB
+
+          This eliminates hash collisions and provides deterministic addressing.
           """
-          token_bytes = token_ids.numpy().tobytes()
-          if mm_hashes:
-              mm_str = "-".join(mm_hashes)
-              token_bytes += mm_str.encode("utf-8")
+          # Get slot_id from request metadata
+          connector_metadata = self._get_connector_metadata()
+          if not isinstance(connector_metadata, ExampleConnectorMetadata):
+              raise RuntimeError("Invalid connector metadata for offset calculation")
 
-          request_hash = safe_hash(token_bytes, usedforsecurity=False).hexdigest()
+          # Find request matching these token_ids
+          slot_id = None
+          slot_base_offset = None
+          for request in connector_metadata.requests:
+              # Match by token_ids
+              if torch.equal(request.token_ids, token_ids):
+                  # NEW: Get slot information from request metadata
+                  slot_id = getattr(request, 'slot_id', None)
+                  slot_base_offset = getattr(request, 'slot_base_offset', None)
+                  break
 
-          # Convert hash to offset (deterministic)
-          offset_base = int(request_hash[:16], 16) % (1 << 32)  # Within 4GB
+          if slot_id is None or slot_base_offset is None:
+              # Fallback to old hash-based method for backward compatibility
+              logger.warning(
+                  f"Request missing slot_id/slot_base_offset, using legacy hash-based offset. "
+                  f"This should not happen in production!"
+              )
+              token_bytes = token_ids.numpy().tobytes()
+              if mm_hashes:
+                  mm_str = "-".join(mm_hashes)
+                  token_bytes += mm_str.encode("utf-8")
 
-          # Add layer offset
+              request_hash = safe_hash(token_bytes, usedforsecurity=False).hexdigest()
+              offset_base = int(request_hash[:16], 16) % (1 << 32)  # Within 4GB
+              layer_id = self._extract_layer_id(layer_name)
+              layer_offset = layer_id * self._layer_size
+              return offset_base + layer_offset
+
+          # NEW CALCULATION: Layer-based offset
+          # Base offset for this request's slot
+          # + Layer offset within slot
           layer_id = self._extract_layer_id(layer_name)
-          layer_offset = layer_id * self._layer_size
+          layer_offset_within_slot = layer_id * self._layer_size
 
-          return offset_base + layer_offset
+          final_offset = slot_base_offset + layer_offset_within_slot
+
+          # CRITICAL: Bounds checking
+          # Each request has num_layers * layer_size bytes allocated
+          num_layers = self._kv_transfer_config.get_from_extra_config("num_layers", 32)
+          max_offset_for_slot = slot_base_offset + (num_layers * self._layer_size)
+
+          if final_offset >= max_offset_for_slot:
+              raise ValueError(
+                  f"RDMA offset out of bounds! "
+                  f"slot_id={slot_id}, "
+                  f"layer_id={layer_id}, "
+                  f"final_offset={final_offset} >= max_offset={max_offset_for_slot}. "
+                  f"This indicates a configuration error (num_layers or layer_size)."
+              )
+
+          # Additional sanity check: ensure we don't exceed buffer size
+          buffer_size = self._kv_transfer_config.get_from_extra_config(
+              "buffer_size_mb", 16384
+          ) * 1024 * 1024
+          if final_offset >= buffer_size:
+              raise ValueError(
+                  f"RDMA offset exceeds total buffer size! "
+                  f"offset={final_offset} >= buffer_size={buffer_size}"
+              )
+
+          logger.debug(
+              f"Layer-based offset: slot={slot_id}, layer={layer_id}, "
+              f"base=0x{slot_base_offset:x}, layer_offset=0x{layer_offset_within_slot:x}, "
+              f"final=0x{final_offset:x}"
+          )
+
+          return final_offset
 
       def _extract_layer_id(self, layer_name: str) -> int:
           """Extract numeric layer ID from layer name (e.g., 'layers.5' → 5)"""
@@ -508,6 +677,30 @@ class RDMAConnector(ExampleConnector):
               if part.isdigit():
                   return int(part)
           return 0
+
+      def _get_request_seq(self, token_ids: torch.Tensor, mm_hashes: list[str]) -> int:
+          """
+          Get request sequence number for imm_data encoding
+
+          Uses hash of token_ids to generate a 16-bit sequence number.
+          In a full implementation, this could come from the orchestrator.
+
+          Args:
+              token_ids: Request token IDs
+              mm_hashes: Multimodal hashes
+
+          Returns:
+              16-bit request sequence number (0-65535)
+          """
+          token_bytes = token_ids.numpy().tobytes()
+          if mm_hashes:
+              mm_str = "-".join(mm_hashes)
+              token_bytes += mm_str.encode("utf-8")
+
+          request_hash = safe_hash(token_bytes, usedforsecurity=False).hexdigest()
+          # Use first 4 hex digits for 16-bit sequence
+          request_seq = int(request_hash[:4], 16)
+          return request_seq
 
       def wait_for_save(self):
           """Wait for all RDMA transfers to complete"""

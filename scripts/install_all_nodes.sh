@@ -74,9 +74,10 @@ for i in "${!CLOUDLAB_NODES[@]}"; do
     log_info "  Log: $LOG_FILE"
 
     # Run installation in background, redirect output to log file
+    # Pass USE_GPU environment variable to remote installation
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "chmod +x /tmp/install_dependencies.sh && \
-         bash /tmp/install_dependencies.sh 2>&1" \
+         USE_GPU=${USE_GPU} bash /tmp/install_dependencies.sh 2>&1" \
         > "$LOG_FILE" 2>&1 &
 
     INSTALL_PIDS+=($!)

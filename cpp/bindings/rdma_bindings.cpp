@@ -28,13 +28,39 @@ public:
 
     ~RDMABindings()
     {
+        // FIX BUG #14: Check RDMA engine validity before deregistering
+        // If RDMAEngine was destroyed first, PD is invalid and ibv_dereg_mr() will crash
+        if (!rdma_engine_ || !rdma_engine_->is_initialized())
+        {
+            Logger::warning("RDMABindings: RDMAEngine destroyed before bindings - skipping MR cleanup");
+            Logger::warning("This may leak " + std::to_string(registered_regions_.size()) +
+                            " memory regions");
+            return;
+        }
+
         // Deregister all memory regions
         for (auto &[name, region] : registered_regions_)
         {
             if (region.mr)
             {
-                ibv_dereg_mr(region.mr);
-                Logger::debug("Deregistered memory region: " + name);
+                try
+                {
+                    int ret = ibv_dereg_mr(region.mr);
+                    if (ret != 0)
+                    {
+                        Logger::error("Failed to deregister memory region '" + name + "': " +
+                                      std::string(strerror(errno)));
+                    }
+                    else
+                    {
+                        Logger::debug("Deregistered memory region: " + name);
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    Logger::error("Exception during MR deregistration for '" + name + "': " +
+                                  std::string(e.what()));
+                }
             }
         }
     }
@@ -60,21 +86,105 @@ public:
 
         try
         {
+            // FIX BUG #8: Validate GPU memory before registration
+            // This prevents:
+            // - Registering CPU memory (PCIe coherence violation)
+            // - Double registration (memory leak)
+            // - Oversized regions (EFAULT)
+
+#ifdef ENABLE_GPU_DIRECT
+            // Validate pointer is GPU memory
+            cudaPointerAttributes attrs;
+            cudaError_t err = cudaPointerGetAttributes(&attrs, (void *)gpu_ptr);
+
+            if (err != cudaSuccess)
+            {
+                Logger::error("register_gpu_memory: cudaPointerGetAttributes failed for '" + name + "': " +
+                              std::string(cudaGetErrorString(err)));
+                cudaGetLastError(); // Clear error
+                return false;
+            }
+
+            // Check pointer type
+            if (attrs.type != cudaMemoryTypeDevice)
+            {
+                Logger::error("register_gpu_memory: Pointer for '" + name + "' is not GPU memory!");
+                Logger::error("  ptr=0x" + std::to_string(gpu_ptr));
+                Logger::error("  type=" + std::to_string(static_cast<int>(attrs.type)) +
+                              " (expected cudaMemoryTypeDevice=2)");
+                Logger::error("  Registering CPU memory causes PCIe coherence violations!");
+                return false;
+            }
+
+            // Validate pointer is on the correct GPU device
+            int current_device;
+            cudaGetDevice(&current_device);
+            if (attrs.device != current_device)
+            {
+                Logger::warning("register_gpu_memory: Pointer for '" + name + "' is on GPU " +
+                                std::to_string(attrs.device) + ", but current device is " +
+                                std::to_string(current_device));
+            }
+
+            Logger::debug("GPU memory validated: ptr=0x" + std::to_string(gpu_ptr) +
+                          ", device=" + std::to_string(attrs.device) +
+                          ", type=" + std::to_string(static_cast<int>(attrs.type)));
+#else
+            Logger::warning("register_gpu_memory: CUDA validation skipped (ENABLE_GPU_DIRECT not set)");
+#endif
+
+            // Check for double registration
+            if (registered_regions_.find(name) != registered_regions_.end())
+            {
+                Logger::error("register_gpu_memory: Region '" + name + "' already registered!");
+                Logger::error("  Previous: ptr=0x" + std::to_string(registered_regions_[name].gpu_ptr) +
+                              ", size=" + std::to_string(registered_regions_[name].size / (1024 * 1024)) + "MB");
+                Logger::error("  New:      ptr=0x" + std::to_string(gpu_ptr) +
+                              ", size=" + std::to_string(size / (1024 * 1024)) + "MB");
+                Logger::error("  Double registration causes memory region leak!");
+                return false;
+            }
+
+            // Sanity check: size should be reasonable
+            if (size == 0)
+            {
+                Logger::error("register_gpu_memory: Cannot register zero-sized region '" + name + "'");
+                return false;
+            }
+
+            if (size > (64UL * 1024 * 1024 * 1024)) // 64GB
+            {
+                Logger::warning("register_gpu_memory: Very large region '" + name + "': " +
+                                std::to_string(size / (1024 * 1024 * 1024)) + "GB");
+            }
+
+            // Build memory registration flags with proper fallback
+            int mr_flags = IBV_ACCESS_LOCAL_WRITE |
+                          IBV_ACCESS_REMOTE_WRITE |
+                          IBV_ACCESS_REMOTE_READ;
+
+#ifdef IBV_ACCESS_RELAXED_ORDERING
+            mr_flags |= IBV_ACCESS_RELAXED_ORDERING;
+            Logger::debug("Using IBV_ACCESS_RELAXED_ORDERING for GPU memory");
+#else
+            Logger::warning("IBV_ACCESS_RELAXED_ORDERING not available - GPU performance may be degraded");
+#endif
+
             // Register memory with InfiniBand
             ibv_mr *mr = ibv_reg_mr(
                 ctx.pd,
                 (void *)gpu_ptr,
                 size,
-                IBV_ACCESS_LOCAL_WRITE |
-                    IBV_ACCESS_REMOTE_WRITE |
-                    IBV_ACCESS_REMOTE_READ |
-                    IBV_ACCESS_RELAXED_ORDERING // Critical for GPU performance
+                mr_flags
             );
 
             if (!mr)
             {
-                Logger::error("ibv_reg_mr failed for " + name + ": " +
-                              std::string(strerror(errno)));
+                Logger::error("ibv_reg_mr failed for '" + name + "': " +
+                              std::string(strerror(errno)) + " (errno=" + std::to_string(errno) + ")");
+                Logger::error("  ptr=0x" + std::to_string(gpu_ptr));
+                Logger::error("  size=" + std::to_string(size / (1024 * 1024)) + "MB");
+                Logger::error("  flags=0x" + std::to_string(mr_flags));
                 return false;
             }
 
@@ -90,9 +200,9 @@ public:
 
             Logger::info("Registered GPU memory '" + name + "': " +
                          "ptr=0x" + std::to_string(gpu_ptr) +
-                         " size=" + std::to_string(size / (1024 * 1024)) + "MB " +
-                         "lkey=0x" + std::to_string(mr->lkey) +
-                         " rkey=0x" + std::to_string(mr->rkey));
+                         ", size=" + std::to_string(size / (1024 * 1024)) + "MB" +
+                         ", lkey=0x" + std::to_string(mr->lkey) +
+                         ", rkey=0x" + std::to_string(mr->rkey));
 
             return true;
         }
@@ -129,8 +239,7 @@ public:
         uint64_t local_addr, // Absolute address (vLLM memory)
         uint64_t remote_offset,
         size_t size,
-        uint32_t qp_num,
-        uint32_t rkey)
+        uint32_t imm_data)   // FIX BUG #11/#12: Use imm_data, remove unused params
     {
         if (!rdma_engine_)
         {
@@ -149,15 +258,17 @@ public:
 
         try
         {
-
+            // FIX BUG #11: Pass imm_data for layer identification
+            // imm_data format: [16-bit request_seq | 16-bit layer_id]
+            // This allows decode node to identify which layer arrived
             bool success = rdma_engine_->post_write_external(
                 peer_id,
                 local_addr,
                 lkey,
                 remote_offset,
                 size,
-                0,   // imm_data
-                true // signal
+                imm_data,  // ✓ Now passes actual layer identification
+                true       // signal
             );
 
             if (!success)
@@ -166,7 +277,8 @@ public:
                 return false;
             }
 
-            Logger::debug("RDMA write posted: " + std::to_string(size) + " bytes");
+            Logger::debug("RDMA write posted: " + std::to_string(size) + " bytes, imm_data=0x" +
+                          std::to_string(imm_data));
             return true;
         }
         catch (const std::exception &e)
@@ -300,9 +412,8 @@ PYBIND11_MODULE(rdma_bindings, m)
              py::arg("local_addr"),
              py::arg("remote_offset"),
              py::arg("size"),
-             py::arg("qp_num"),
-             py::arg("rkey"),
-             "Perform RDMA write operation")
+             py::arg("imm_data") = 0,
+             "Perform RDMA write operation with immediate data")
         .def("rdma_wait_completion", &RDMABindings::rdma_wait_completion,
              py::arg("timeout_ms") = 0,
              "Wait for RDMA operations to complete")
