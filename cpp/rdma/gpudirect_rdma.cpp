@@ -373,10 +373,12 @@ void alloc_and_register_gpu_mem(RdmaContext &ctx,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  create_cqs_and_qp
+//  create_cqs_only
 //
-//  Creates two Completion Queues (one for send, one for receive) and one
-//  Reliable Connected Queue Pair.  Drives the QP from RESET to INIT.
+//  FIX BUG #13: Renamed from create_cqs_and_qp, QP creation removed
+//
+//  Creates two Completion Queues (one for send, one for receive) that are
+//  SHARED by all peer QPs created by RDMAEngine.
 //
 //  Why separate send and recv CQs?
 //  A single CQ would work, but mixing send and recv completions on one queue
@@ -385,22 +387,17 @@ void alloc_and_register_gpu_mem(RdmaContext &ctx,
 //  (decode side cares).  Separate CQs let each side poll exactly the queue it
 //  owns with no filtering.
 //
-//  Why RC (Reliable Connected)?
-//  RC provides in-order, lossless delivery with hardware retransmit.  For
-//  KV-cache transfer correctness is non-negotiable — a silently dropped or
-//  reordered chunk would corrupt the decode attention computation.  UC
-//  (Unreliable Connected) would be slightly faster but would require
-//  application-level sequence numbering and retransmit logic.  UD
-//  (Unreliable Datagram) adds MTU-sized fragmentation overhead on top.
+//  Multi-peer architecture:
+//  - These CQs are shared by ALL peer QPs (e.g., decode node has 3 prefill peers,
+//    all 3 peer QPs use the same send_cq and recv_cq)
+//  - QPs are created separately per-peer by RDMAEngine::create_qp_for_peer()
+//  - Each QP references these shared CQs via ibv_qp_init_attr
 //
-//  sq_sig_all = 0:
-//  By default every posted WR generates a CQ entry.  With sq_sig_all=0 only
-//  WRs explicitly flagged IBV_SEND_SIGNALED produce a completion.  For bulk
-//  KV-cache transfer we signal only the last WR in a batch, collapsing N polls
-//  into 1 and reducing CQ overhead by ~(N-1)/N.
+//  NOTE: QP creation, RESET→INIT transition, and address exchange are now
+//  handled by RDMAEngine, not by this module.
 // ─────────────────────────────────────────────────────────────────────────────
 
-void create_cqs_and_qp(RdmaContext &ctx, const RdmaConfig &rcfg)
+void create_cqs_only(RdmaContext &ctx, const RdmaConfig &rcfg)
 {
 
     // ── Completion Queues ────────────────────────────────────────────────────
@@ -428,96 +425,14 @@ void create_cqs_and_qp(RdmaContext &ctx, const RdmaConfig &rcfg)
             errno_str(errno));
     }
 
-    // ── Queue Pair init attributes ───────────────────────────────────────────
-    //
-    //  max_send_wr / max_recv_wr are capped at device limits.
-    //  The device may round up to the next hardware alignment — that is normal.
-    ibv_qp_init_attr init_attr{};
-    init_attr.send_cq = ctx.send_cq;
-    init_attr.recv_cq = ctx.recv_cq;
-    init_attr.qp_type = IBV_QPT_RC;
-    init_attr.sq_sig_all = 0; // only signal flagged WRs (see above)
-    init_attr.cap.max_send_wr =
-        std::min(rcfg.qp_max_send_wr, ctx.dev_attr.max_qp_wr);
-    init_attr.cap.max_recv_wr =
-        std::min(rcfg.qp_max_recv_wr, ctx.dev_attr.max_qp_wr);
-    init_attr.cap.max_send_sge =
-        std::min(MAX_SGE, ctx.dev_attr.max_sge);
-    init_attr.cap.max_recv_sge =
-        std::min(MAX_SGE, ctx.dev_attr.max_sge);
-    init_attr.cap.max_inline_data =
-        static_cast<uint32_t>(rcfg.qp_max_inline_data);
-
-    ctx.qp = ibv_create_qp(ctx.pd, &init_attr);
-    if (!ctx.qp)
-    {
-        ibv_destroy_cq(ctx.send_cq);
-        ctx.send_cq = nullptr;
-        ibv_destroy_cq(ctx.recv_cq);
-        ctx.recv_cq = nullptr;
-        throw std::runtime_error(
-            "[QP] ibv_create_qp failed — errno=" + errno_str(errno) +
-            ".  Check device QP/CQ limits with ibv_devinfo.");
-    }
-
-    // ── RESET → INIT ─────────────────────────────────────────────────────────
-    //
-    //  In INIT the QP is allocated but cannot send or receive yet.
-    //  The required attributes at this transition are:
-    //    - qp_state        : move to INIT
-    //    - pkey_index      : partition key index (0 for default partition)
-    //    - port_num        : physical IB port
-    //    - qp_access_flags : what remote peers are allowed to do to this QP
-    ibv_qp_attr attr{};
-    attr.qp_state = IBV_QPS_INIT;
-    attr.pkey_index = 0;
-    attr.port_num = static_cast<uint8_t>(rcfg.ib_port);
-    attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE |
-                           IBV_ACCESS_REMOTE_WRITE |
-                           IBV_ACCESS_REMOTE_READ;
-
-    int mask = IBV_QP_STATE |
-               IBV_QP_PKEY_INDEX |
-               IBV_QP_PORT |
-               IBV_QP_ACCESS_FLAGS;
-
-    if (ibv_modify_qp(ctx.qp, &attr, mask))
-    {
-        ibv_destroy_qp(ctx.qp);
-        ctx.qp = nullptr;
-        ibv_destroy_cq(ctx.send_cq);
-        ctx.send_cq = nullptr;
-        ibv_destroy_cq(ctx.recv_cq);
-        ctx.recv_cq = nullptr;
-        throw std::runtime_error("[QP] RESET→INIT failed — errno=" +
-                                 errno_str(errno));
-    }
-
-    // ── Capture local QP address ─────────────────────────────────────────────
-    //
-    //  QPN and LID are stable once the QP exists.  PSN is a random 24-bit
-    //  value — randomising it prevents stale packets from a previous QP
-    //  lifetime (same QPN, different process run) being accepted.
-    ctx.local_addr.qpn = ctx.qp->qp_num;
-    ctx.local_addr.lid = ctx.port_attr.lid;
-    ctx.local_addr.psn = static_cast<uint32_t>(lrand48()) & 0x00FFFFFF;
-
-    // GID — required for RoCEv2 (Ethernet fabric); also valid for IB.
-    ibv_gid gid{};
-    if (ibv_query_gid(ctx.ctx, rcfg.ib_port, rcfg.gid_index, &gid))
-        throw std::runtime_error(
-            "[QP] ibv_query_gid failed for GID index " +
-            std::to_string(rcfg.gid_index) +
-            ".  For RoCEv2 use index 3; for IB use index 0.");
-    std::memcpy(ctx.local_addr.gid, gid.raw, 16);
-
-    std::cout << "[QP] Created RC QP"
-              << "  QPN=0x" << std::hex << ctx.local_addr.qpn
-              << "  LID=0x" << ctx.local_addr.lid
-              << std::dec
-              << "  PSN=" << ctx.local_addr.psn
-              << "  GID=" << fmt_gid(ctx.local_addr.gid)
+    std::cout << "[CQ] Created shared CQs"
+              << "  send_cq depth=" << cq_depth
+              << "  recv_cq depth=" << cq_depth
               << "\n";
+
+    // FIX BUG #13: QP creation removed
+    // QPs are now created per-peer by RDMAEngine::create_qp_for_peer()
+    // Each peer QP will reference these shared CQs via ibv_qp_init_attr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -832,16 +747,11 @@ void post_recv(RdmaContext &ctx)
 
 void destroy_rdma_context(RdmaContext &ctx)
 {
+    // FIX BUG #13: QP destruction removed
+    // QPs are owned and destroyed by RDMAEngine::shutdown(), not by this function.
+    // ctx.qp is just a temporary reference slot, never owned by RdmaContext.
 
-    // 1. Destroy QP first — stops any in-flight DMAs referencing the MR
-    if (ctx.qp)
-    {
-        ibv_destroy_qp(ctx.qp);
-        ctx.qp = nullptr;
-        std::cout << "[CTX] QP destroyed\n";
-    }
-
-    // 2. Destroy CQs — no QP references them anymore
+    // 1. Destroy CQs (shared by all peer QPs)
     if (ctx.send_cq)
     {
         ibv_destroy_cq(ctx.send_cq);

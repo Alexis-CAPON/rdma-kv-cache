@@ -42,19 +42,28 @@ struct QpAddr
 };
 
 // ── Per-GPU RDMA context ───────────────────────────────────────────────────────
+// FIX BUG #13: Removed legacy single-QP architecture
+//
+// In multi-peer mode, QPs are created and managed per-peer by RDMAEngine.
+// This context holds only SHARED resources: device, PD, CQs, and GPU memory.
+//
+// The 'qp' field is a temporary reference slot used by low-level functions
+// (e.g., post_recv) that need a QP pointer. It is NOT owned by this context
+// and should NOT be destroyed via destroy_rdma_context().
 struct RdmaContext
 {
     ibv_context *ctx = nullptr; // verbs device context
     ibv_pd *pd = nullptr;       // Protection Domain
-    ibv_cq *send_cq = nullptr;  // send Completion Queue
-    ibv_cq *recv_cq = nullptr;  // recv Completion Queue
-    ibv_qp *qp = nullptr;       // Queue Pair (RC)
+    ibv_cq *send_cq = nullptr;  // send Completion Queue (shared by all peer QPs)
+    ibv_cq *recv_cq = nullptr;  // recv Completion Queue (shared by all peer QPs)
+    ibv_qp *qp = nullptr;       // Temporary QP reference (NOT owned, do not destroy)
     ibv_port_attr port_attr{};
     ibv_device_attr dev_attr{};
-    QpAddr local_addr{};  // our address (sent to peer)
-    QpAddr remote_addr{}; // peer's address (received from peer)
     GpuMemRegion mem{};
     int gpu_id = 0;
+
+    // NOTE: local_addr and remote_addr removed - these were for single-QP mode.
+    // In multi-peer mode, each peer has its own QP address stored in NodeInfo.qmaps
 };
 
 // ── Function declarations ──────────────────────────────────────────────────────
@@ -73,8 +82,10 @@ void alloc_and_register_gpu_mem(RdmaContext &ctx,
 // Open IB device by name (empty = first found), allocate PD
 void open_ib_device(RdmaContext &ctx, const std::string &dev_name);
 
-// Create send/recv CQs and RC QP; drive QP RESET → INIT
-void create_cqs_and_qp(RdmaContext &ctx, const RdmaConfig &rcfg);
+// FIX BUG #13: Renamed from create_cqs_and_qp
+// Now only creates CQs (shared by all peer QPs)
+// QPs are created per-peer by RDMAEngine::create_qp_for_peer()
+void create_cqs_only(RdmaContext &ctx, const RdmaConfig &rcfg);
 
 // Drive QP INIT → RTR → RTS (requires ctx.remote_addr to be filled)
 void connect_qp(RdmaContext &ctx, const RdmaConfig &rcfg);

@@ -233,6 +233,7 @@ node:
 # Memory Configuration
 memory:
   kv_buffer_mb: ${MEMORY_KV_BUFFER_MB}           # Total GPU memory buffer (16 GB)
+  layer_size_mb: ${MEMORY_LAYER_SIZE_MB}            # Per-layer KV cache size (128 MB default)
   chunk_size_mb: ${MEMORY_CHUNK_SIZE_MB}             # Size of each chunk (64-128 MB recommended)
   num_kv_chunks: ${MEMORY_NUM_KV_CHUNKS}             # Number of chunks per request
   mr_relaxed_ordering: ${MEMORY_MR_RELAXED_ORDERING}     # Enable PCIe relaxed ordering for better BW
@@ -392,6 +393,7 @@ node:
 # Memory Configuration
 memory:
   kv_buffer_mb: ${MEMORY_KV_BUFFER_MB}           # Total GPU memory buffer (16 GB)
+  layer_size_mb: ${MEMORY_LAYER_SIZE_MB}            # Per-layer KV cache size (128 MB default)
   chunk_size_mb: ${MEMORY_CHUNK_SIZE_MB}             # Size of each chunk (64-128 MB recommended)
   num_kv_chunks: ${MEMORY_NUM_KV_CHUNKS}             # Number of chunks per request
   mr_relaxed_ordering: ${MEMORY_MR_RELAXED_ORDERING}     # Enable PCIe relaxed ordering for better BW

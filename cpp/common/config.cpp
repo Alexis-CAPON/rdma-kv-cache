@@ -96,6 +96,7 @@ Config Config::fromFile(const std::string &path)
     {
         const YAML::Node &mem = yaml["memory"];
         config.memory.kv_buffer_mb = mem["kv_buffer_mb"] ? mem["kv_buffer_mb"].as<size_t>() : 1024;
+        config.memory.layer_size_mb = mem["layer_size_mb"] ? mem["layer_size_mb"].as<size_t>() : 128;
         config.memory.num_kv_chunks = mem["num_kv_chunks"] ? mem["num_kv_chunks"].as<int>() : 16;
         config.memory.chunk_size_mb = mem["chunk_size_mb"] ? mem["chunk_size_mb"].as<size_t>() : 64;
         config.memory.mr_relaxed_ordering = mem["mr_relaxed_ordering"] ? mem["mr_relaxed_ordering"].as<bool>() : true;

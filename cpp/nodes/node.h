@@ -13,6 +13,7 @@
 #include "cpp/rdma/rdma_engine.h"
 #include "cpp/common/types.h"
 #include "cpp/nodes/request_tracker.h"
+#include "cpp/nodes/request_tracker_layer.h"
 
 class Node
 {
@@ -86,6 +87,9 @@ public:
     RDMAEngine *get_rdma_engine() { return &rdma_engine_; }
     bool start_vllm_server();
 
+    // RDMA polling thread (decode nodes only)
+    void rdma_poll_loop();
+
 private:
     // Configuration
     Config config_;
@@ -106,6 +110,12 @@ private:
     pid_t vllm_pid = -1;
 
     // RDMA
-
     RDMAEngine rdma_engine_;
+
+    // Layer-based KV transfer tracking (decode nodes only)
+    RequestTrackerLayer request_tracker_layer_;
+
+    // RDMA polling thread (decode nodes only)
+    std::thread rdma_poll_thread_;
+    std::atomic<bool> rdma_poll_running_{false};
 };

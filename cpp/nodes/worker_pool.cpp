@@ -68,6 +68,7 @@ WorkerPool::WorkerPool(
     const std::string &node_id,
     NodeInfo &node_info,
     RDMAEngine &rdma_engine,
+    RequestTrackerLayer &request_tracker_layer,
     Node *node_ptr)
     : num_workers_(num_workers),
       node_id_(node_id),
@@ -78,26 +79,13 @@ WorkerPool::WorkerPool(
       config_(config),
       node_info_(node_info),
       rdma_engine_(rdma_engine),
+      request_tracker_layer_(request_tracker_layer),
       node_ptr_(node_ptr)
 
 {
     Logger::info("WorkerPool initializing with " + std::to_string(num_workers_) + " workers");
 
     // Pre-create Worker instances (one per thread)
-
-    /*
-
-        // Instance for prefill/decode nodes
-    Worker(
-        uint32_t worker_id,
-        EpollWorker &epoll_worker,
-        const Config &config,
-        uint64_t node_id,
-        std::atomic<uint64_t> *server_ops_counter = nullptr,
-        NodeInfo &node_info,
-        RDMAEngine &rdma_engine);
-*/
-
     workers_.reserve(num_workers_);
     for (uint32_t i = 0; i < num_workers_; i++)
     {
@@ -109,6 +97,7 @@ WorkerPool::WorkerPool(
             &total_ops_,
             node_info_,
             rdma_engine_,
+            request_tracker_layer_,
             node_ptr_)); // Pass server-side operation counter
     }
 

@@ -19,6 +19,7 @@ Worker::Worker(
     std::atomic<uint64_t> *server_ops_counter,
     NodeInfo &node_info,
     RDMAEngine &rdma_engine,
+    RequestTrackerLayer &request_tracker_layer,
     Node *node_ptr)
     : worker_id_(worker_id),
       node_id_(node_id),
@@ -28,6 +29,7 @@ Worker::Worker(
       node_ptr_(node_ptr),
       node_info_(node_info),
       rdma_engine_(rdma_engine),
+      request_tracker_layer_(request_tracker_layer),
       events_processed_(0)
 {
     Logger::info("Worker " + std::to_string(worker_id_) + " initialized for Prefill/Decode node");
@@ -115,6 +117,10 @@ void Worker::process_event(Event &event)
 
     case MessageType::DECODE_COMPLETE:
         handle_decode_complete(event.client_fd, event.message.get());
+        break;
+
+    case MessageType::KV_TRANSFER_COMPLETE:
+        handle_kv_transfer_complete(event.client_fd, event.message.get());
         break;
 
     default:
@@ -616,7 +622,7 @@ void Worker::handle_assign_request(int orchestrator_fd, Message *msg)
         {"prompt", msg->request_info.prompt},
         {"max_tokens", 1}, // Prefill only
         {"temperature", 0.0},
-        {"extra_body", {{"kv_connector_config", {{"role", "send"}, {"rdma_device", node_info_.ib_dev_name}, {"rdma_port", node_info_.ib_port}, {"rdma_gid_index", config_.rdma.gid_index}, {"peer_id", decode_node_id}, {"rdma_qp_num", decode_peer->local_qp_num}, {"rdma_remote_addr", decode_peer->remote_addr}, {"rdma_remote_rkey", decode_peer->remote_rkey}, {"layer_size", config_.memory.kv_buffer_mb * 1024 * 1024}, {"request_id", msg->request_info.request_id}}}}}};
+        {"extra_body", {{"kv_connector_config", {{"role", "send"}, {"rdma_device", node_info_.ib_dev_name}, {"rdma_port", node_info_.ib_port}, {"rdma_gid_index", config_.rdma.gid_index}, {"peer_id", decode_node_id}, {"rdma_qp_num", decode_peer->local_qp_num}, {"rdma_remote_addr", decode_peer->remote_addr}, {"rdma_remote_rkey", decode_peer->remote_rkey}, {"layer_size", config_.memory.layer_size_mb * 1024 * 1024}, {"request_id", msg->request_info.request_id}, {"slot_id", msg->request_info.slot_id}, {"slot_base_offset", msg->request_info.slot_base_offset}, {"request_seq", msg->request_info.slot_id}}}}}};
 
     // 3. HTTP POST to local vLLM
     std::string vllm_url = "http://localhost:" +
@@ -661,20 +667,81 @@ void Worker::handle_assign_request(int orchestrator_fd, Message *msg)
 
 void Worker::handle_prefill_complete(int server_fd, Message *msg)
 {
-    // 1. Extract KV metadata
-    std::string request_id = msg->request_info.request_id;
-    int num_prompt_tokens = msg->kv_metadata.num_tokens;
+    const std::string& request_id = msg->request_info.request_id;
+    int slot_id = msg->request_info.slot_id;
     int num_layers = msg->kv_metadata.num_layers;
+    int num_tokens = msg->kv_metadata.num_tokens;
+    std::string prefill_node_id = msg->request_info.prefill_node_id;
 
-    // 2. Build vLLM request
+    // Register with RequestTrackerLayer — assigns seq_num, pre-computes offsets
+    try {
+        uint16_t seq_num = request_tracker_layer_.add_request(
+            request_id,
+            prefill_node_id,
+            slot_id,
+            num_layers
+        );
+
+        // Store additional metadata
+        RequestTrackerLayer::RequestInfo info;
+        if (request_tracker_layer_.get_request(request_id, info)) {
+            // Update metadata (prompt, tokens, etc. not set by add_request)
+            // Note: These are stored in the RequestInfo but add_request doesn't take them
+            // For now we'll just update state
+        }
+
+        request_tracker_layer_.update_state(
+            request_id,
+            RequestTrackerLayer::State::WAITING_FOR_KV
+        );
+
+        Logger::info("Decode: registered request " + request_id +
+                    " slot=" + std::to_string(slot_id) +
+                    " seq_num=" + std::to_string(seq_num) +
+                    ", waiting for " + std::to_string(num_layers) + " RDMA layers");
+    } catch (const std::exception& e) {
+        Logger::error("Failed to register request in RequestTrackerLayer: " + std::string(e.what()));
+        return;
+    }
+
+    // ← No vLLM call here. Return and wait for KV_TRANSFER_COMPLETE.
+}
+
+void Worker::handle_kv_transfer_complete(int /*unused_fd*/, Message *msg)
+{
+    const std::string& request_id = msg->request_info.request_id;
+
+    RequestTrackerLayer::RequestInfo info;
+    if (!request_tracker_layer_.get_request(request_id, info)) {
+        Logger::error("KV_TRANSFER_COMPLETE for unknown request " + request_id);
+        return;
+    }
+
+    request_tracker_layer_.update_state(
+        request_id,
+        RequestTrackerLayer::State::DECODING
+    );
+
+    // Now we know all layers are in the staging buffer at slot info.slot_id
     json vllm_request = {
         {"model", config_.model_name},
-        {"prompt", ""}, // Empty - using cached KV
-        {"max_tokens", msg->request_info.max_tokens},
+        {"prompt", info.prompt.empty() ? "" : info.prompt},
+        {"max_tokens", info.max_output_tokens > 0 ? info.max_output_tokens : msg->request_info.max_tokens},
         {"temperature", 0.7},
-        {"extra_body", {{"kv_connector_config", {{"role", "recv"}, {"rdma_device", node_info_.ib_dev_name}, {"rdma_port", node_info_.ib_port}, {"rdma_gid_index", config_.rdma.gid_index}, {"layer_size", config_.memory.kv_buffer_mb * 1024 * 1024}, {"num_layers", num_layers}, {"num_tokens", num_prompt_tokens}, {"request_id", request_id}}}}}};
+        {"extra_body", {{"kv_connector_config", {
+            {"role", "recv"},
+            {"rdma_device", node_info_.ib_dev_name},
+            {"rdma_port", node_info_.ib_port},
+            {"rdma_gid_index", config_.rdma.gid_index},
+            {"slot_id", info.slot_id},
+            {"slot_base_offset", info.base_offset},
+            {"layer_size", config_.memory.layer_size_mb * 1024 * 1024},
+            {"num_layers", info.num_layers},
+            {"num_tokens", info.num_tokens},
+            {"request_id", request_id}
+        }}}}
+    };
 
-    // 3. HTTP POST to local vLLM
     std::string vllm_url = "http://localhost:" +
                            std::to_string(config_.vllm_port) +
                            "/v1/completions";
@@ -685,17 +752,27 @@ void Worker::handle_prefill_complete(int server_fd, Message *msg)
     if (!response.success)
     {
         Logger::error("vLLM decode failed: " + response.error);
+        request_tracker_layer_.update_state(request_id, RequestTrackerLayer::State::FAILED);
         return;
     }
 
-    // 4. Parse response
+    // Parse response
     json vllm_response = json::parse(response.body);
     std::string generated_text = vllm_response["choices"][0]["text"];
 
     Logger::info("Decode complete: " + generated_text);
 
-    // 5. Send DECODE_COMPLETE to orchestrator
-    Message decode_complete_msg = Message::decode_complete(config_.orchestrator_id, msg->request_info, generated_text);
+    // Update state
+    request_tracker_layer_.update_state(request_id, RequestTrackerLayer::State::COMPLETED);
 
+    // Send DECODE_COMPLETE to orchestrator
+    Message decode_complete_msg = Message::decode_complete(
+        config_.orchestrator_id,
+        msg->request_info,
+        generated_text
+    );
     send_server_response(epoll_worker_.get_orchestrator_fd(), decode_complete_msg);
+
+    // Clean up
+    request_tracker_layer_.remove_request(request_id);
 }

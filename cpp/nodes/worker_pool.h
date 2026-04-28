@@ -13,6 +13,7 @@
 #include "cpp/apps/orchestrator/rdma_exchange_tracker.h"
 #include "cpp/apps/orchestrator/request_tracker.h"
 #include "cpp/apps/orchestrator/request_router.h"
+#include "cpp/nodes/request_tracker_layer.h"
 #include "cpp/nodes/node.h"
 
 #include "cpp/rdma/rdma_engine.h"
@@ -30,6 +31,7 @@ public:
         const std::string &node_id,
         NodeInfo &node_info,
         RDMAEngine &rdma_engine,
+        RequestTrackerLayer &request_tracker_layer,
         Node *node_ptr);
 
     // Constructor for orchestrator node
@@ -73,6 +75,7 @@ private:
 
     NodeInfo &node_info_;     // only used by prefill/decode workers
     RDMAEngine &rdma_engine_; // only used by prefill/decode workers
+    RequestTrackerLayer &request_tracker_layer_; // only used by decode workers
     Node *node_ptr_;          // only used by prefill/decode workers (for vLLM server management)
 
     EpollWorker &epoll_worker_;

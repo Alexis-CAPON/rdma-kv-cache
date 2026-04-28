@@ -196,7 +196,19 @@ class RDMAConnector(ExampleConnector):
           """
           Wrap C++-allocated GPU memory as PyTorch tensor (zero-copy)
 
-          FIX BUG #15: Use public API instead of private _new_with_data_ptr
+          FIX BUG #15: Revert to private API - it's the only option
+
+          IMPORTANT: This uses PyTorch's private API (HalfStorage._new_with_data_ptr)
+          because there is NO public API to wrap external GPU pointers.
+
+          The memory is allocated by C++ (cudaMalloc) and registered for RDMA.
+          PyTorch does not provide a public API for this use case:
+          - torch.frombuffer() only works with CPU memory
+          - DLPack requires memory from another DL framework (CuPy/JAX/TF)
+          - CUDA Array Interface is not supported by PyTorch
+
+          The private API is the only working solution until PyTorch adds
+          public support for external GPU memory wrapping.
           """
           if not torch.cuda.is_available():
               raise RuntimeError(
@@ -211,52 +223,8 @@ class RDMAConnector(ExampleConnector):
           num_elements = size_bytes // element_size
 
           try:
-              # FIX BUG #15: Use public torch.as_tensor with CUDA external storage
-              # This is the recommended way to wrap external GPU pointers
-              import ctypes
-
-              # Create ctypes pointer to GPU memory
-              ptr_type = ctypes.POINTER(ctypes.c_uint8)
-              c_ptr = ctypes.cast(gpu_ptr, ptr_type)
-
-              # Wrap as numpy array (zero-copy, just metadata)
-              import numpy as np
-              np_array = np.ctypeslib.as_array(c_ptr, shape=(size_bytes,))
-
-              # Convert to PyTorch tensor on CUDA
-              # Note: This creates a copy to GPU if not already there,
-              # but since gpu_ptr is already GPU memory, PyTorch should detect it
-              tensor = torch.frombuffer(
-                  np_array,
-                  dtype=torch.uint8,
-                  count=size_bytes
-              ).cuda().view(dtype)
-
-              # Verify pointer matches (ensure zero-copy)
-              if tensor.data_ptr() != gpu_ptr:
-                  logger.warning(
-                      f"Tensor copy detected: original=0x{gpu_ptr:x}, "
-                      f"tensor=0x{tensor.data_ptr():x}"
-                  )
-                  logger.warning("Falling back to unsafe direct pointer wrapping")
-
-                  # Fallback: use private API if public API doesn't work
-                  # This maintains compatibility while logging the issue
-                  storage = torch.cuda.HalfStorage._new_with_data_ptr(
-                      data_ptr=gpu_ptr,
-                      size=num_elements
-                  )
-                  tensor = torch.tensor([], dtype=dtype, device='cuda').set_(
-                      storage=storage,
-                      storage_offset=0,
-                      size=(num_elements,)
-                  )
-
-          except Exception as e:
-              logger.warning(f"Public API wrapping failed: {e}")
-              logger.warning("Falling back to private API (may break in future PyTorch versions)")
-
-              # Fallback to private API
+              # Use private API - only option for external GPU memory
+              # This has been stable across PyTorch versions 1.x-2.x
               storage = torch.cuda.HalfStorage._new_with_data_ptr(
                   data_ptr=gpu_ptr,
                   size=num_elements
@@ -267,12 +235,35 @@ class RDMAConnector(ExampleConnector):
                   size=(num_elements,)
               )
 
-          logger.debug(
-              f"Wrapped GPU buffer: shape={tensor.shape}, "
-              f"ptr=0x{tensor.data_ptr():x}"
-          )
+              # Verify zero-copy worked
+              if tensor.data_ptr() != gpu_ptr:
+                  raise RuntimeError(
+                      f"Tensor wrapping failed: expected ptr=0x{gpu_ptr:x}, "
+                      f"got ptr=0x{tensor.data_ptr():x}. "
+                      f"This indicates a copy occurred instead of zero-copy wrapping."
+                  )
 
-          return tensor
+              logger.debug(
+                  f"Wrapped GPU buffer: shape={tensor.shape}, "
+                  f"ptr=0x{tensor.data_ptr():x}, "
+                  f"size={size_bytes/(1024**2):.1f}MB"
+              )
+
+              return tensor
+
+          except AttributeError as e:
+              # Private API removed in future PyTorch version
+              raise RuntimeError(
+                  f"PyTorch private API unavailable (version {torch.__version__}). "
+                  f"This RDMA connector requires torch.cuda.HalfStorage._new_with_data_ptr "
+                  f"to wrap C++-allocated GPU memory. "
+                  f"Please file an issue at https://github.com/pytorch/pytorch requesting "
+                  f"public API for external GPU memory wrapping (cudaMalloc-based tensors)."
+              ) from e
+          except Exception as e:
+              raise RuntimeError(
+                  f"Failed to wrap GPU pointer 0x{gpu_ptr:x} as PyTorch tensor: {e}"
+              ) from e
 
       # ========================================================================
       # Prefill Node: Save KV (Zero-Copy RDMA Write)

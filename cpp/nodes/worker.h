@@ -15,6 +15,7 @@
 #include "cpp/rdma/rdma_engine.h"
 #include "cpp/apps/orchestrator/request_tracker.h"
 #include "cpp/apps/orchestrator/request_router.h"
+#include "cpp/nodes/request_tracker_layer.h"
 #include "cpp/nodes/node.h"
 
 class Worker
@@ -29,6 +30,7 @@ public:
         std::atomic<uint64_t> *server_ops_counter,
         NodeInfo &node_info,
         RDMAEngine &rdma_engine,
+        RequestTrackerLayer &request_tracker_layer,
         Node *node_ptr = nullptr);
 
     // Instance for Orchestrator
@@ -61,6 +63,7 @@ private:
 
     NodeInfo &node_info_;     // only used by prefill/decode workers
     RDMAEngine &rdma_engine_; // only used by prefill/decode workers
+    RequestTrackerLayer &request_tracker_layer_; // only used by decode workers
 
     NodeRegistry &node_registry_;                                       // Only used by orchestrator worker
     RdmaExchangeTracker &rdma_exchange_tracker_;                        // Only used by orchestrator worker
@@ -97,6 +100,7 @@ private:
 
     // Only decode nodes
     void handle_prefill_complete(int server_fd, Message *msg);
+    void handle_kv_transfer_complete(int server_fd, Message *msg);
 
     // ========================================
     // Response Handling

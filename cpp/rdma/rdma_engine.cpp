@@ -238,13 +238,64 @@ bool RDMAEngine::post_write(const std::string &peer_id,
 
 bool RDMAEngine::post_recv_wrs(int count)
 {
+    // FIX BUG #13: Dual QP Management
+    //
+    // PROBLEM: Previously posted recv WRs to rdma_ctx_.qp (legacy single-peer QP)
+    // which was vestigial and not actually used for data transfers.
+    //
+    // SOLUTION: Post recv WRs to any peer QP (arbitrary choice - first QP).
+    //
+    // Why this works:
+    // - All peer QPs share the same recv CQ (rdma_ctx_.recv_cq)
+    // - Recv WRs are pooled at the CQ level, not per-QP
+    // - An incoming RDMA WRITE_WITH_IMM from ANY peer consumes a recv WR from the pool
+    // - The CQ completion (wc) identifies which peer sent the data via wc.qp_num
+    //
+    // This is standard InfiniBand behavior: recv WRs posted to any QP sharing a CQ
+    // can service incoming messages on any of those QPs.
+    //
+    // Example: Decode node with 3 prefill peers
+    //   peer_qps_ = { "prefill-01": QP#200, "prefill-02": QP#201, "prefill-03": QP#202 }
+    //   All 3 QPs share rdma_ctx_.recv_cq
+    //
+    // We post `count` recv WRs to QP#200 (arbitrary first QP).
+    // These recv WRs can service WRITE_WITH_IMM from any of the 3 prefill nodes.
+
     try
     {
+        // Validation: ensure we have at least one peer QP
+        if (peer_qps_.empty())
+        {
+            Logger::error("RDMAEngine: Cannot post recv WRs - no peer QPs created yet");
+            return false;
+        }
+
+        // Use the first QP (arbitrary choice - any QP works due to shared recv CQ)
+        auto first_qp_iter = peer_qps_.begin();
+        ibv_qp *any_qp = first_qp_iter->second;
+        std::string peer_id = first_qp_iter->first;
+
+        if (!any_qp)
+        {
+            Logger::error("RDMAEngine: First peer QP is null (peer=" + peer_id + ")");
+            return false;
+        }
+
+        // Create temporary context with this peer's QP
+        // Note: post_recv() only needs ctx.qp, rest of context is unused
+        RdmaContext temp_ctx = rdma_ctx_;
+        temp_ctx.qp = any_qp;
+
+        // Post recv WRs
         for (int i = 0; i < count; ++i)
         {
-            post_recv(rdma_ctx_);
+            post_recv(temp_ctx);
         }
-        Logger::debug("RDMAEngine: Posted " + std::to_string(count) + " recv WRs");
+
+        Logger::debug("RDMAEngine: Posted " + std::to_string(count) + " recv WRs " +
+                      "to peer " + peer_id + " QP#" + std::to_string(any_qp->qp_num) +
+                      " (shared by all " + std::to_string(peer_qps_.size()) + " peers via recv CQ)");
+
         return true;
     }
     catch (const std::exception &ex)
@@ -357,7 +408,7 @@ std::string RDMAEngine::get_peer_id_from_qp_num(uint32_t qp_num) const
 {
     // FIX BUG #2: Map QP number to peer ID for recv completion identification
     // This prevents mixing data from different prefill nodes when using shared recv CQ
-    for (const auto& [peer_id, qp] : peer_qps_)
+    for (const auto &[peer_id, qp] : peer_qps_)
     {
         if (qp && qp->qp_num == qp_num)
         {
@@ -682,8 +733,8 @@ bool RDMAEngine::connect_qp_to_peer(const std::string &peer_id, ibv_qp *qp)
                 // Auto-discovery: use port's active MTU
                 attr.path_mtu = rdma_ctx_.port_attr.active_mtu;
                 Logger::info("Auto-discovered MTU: " +
-                    std::to_string(ibv_mtu_to_num(rdma_ctx_.port_attr.active_mtu)) +
-                    " bytes (optimal for this fabric)");
+                             std::to_string(ibv_mtu_to_num(rdma_ctx_.port_attr.active_mtu)) +
+                             " bytes (optimal for this fabric)");
             }
 
             attr.dest_qp_num = peer_info->remote_qp_num;

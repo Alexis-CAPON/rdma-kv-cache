@@ -25,11 +25,17 @@ Node::Node(Config config)
       server_tcp_server_(),
       event_queue_(config.orchestrator_event_queue_size),
       epoll_worker_(event_queue_, server_tcp_server_, node_info_),
-      worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id, node_info_, rdma_engine_, this),
       node_info_(),
-      rdma_engine_(config_, node_info_)
+      rdma_engine_(config_, node_info_),
+      request_tracker_layer_(RequestTrackerLayer::MemoryLayout{
+          .buffer_size_bytes = config.memory.kv_buffer_mb * 1024UL * 1024UL,
+          .max_concurrent_requests = config.memory.max_concurrent_requests,
+          .num_layers = static_cast<int>(config.num_layers),
+          .layer_size_bytes = config.memory.layer_size_mb * 1024UL * 1024UL
+      }),
+      worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id, node_info_, rdma_engine_, request_tracker_layer_, this)
 {
-    Logger::info("Initializing Node" + config.role + " : " + config.hostname + ":" +
+    Logger::info("Initializing Node " + config.role + " : " + config.hostname + ":" +
                  std::to_string(config.server_socket_port) + " (server)");
 
     // Populating node_info_ with config
@@ -121,7 +127,16 @@ bool Node::start()
     set_current_node(this);
 
     // ========================================
-    // 5. Set State
+    // 6. Start RDMA polling thread (decode nodes only)
+    // ========================================
+    if (config_.role == "decode") {
+        rdma_poll_running_ = true;
+        rdma_poll_thread_ = std::thread(&Node::rdma_poll_loop, this);
+        Logger::info("RDMA polling thread started for decode node");
+    }
+
+    // ========================================
+    // 7. Set State
     // ========================================
 
     state_.store(State::WAITING_FOR_ORCHESTRATOR_BROADCAST);
@@ -167,6 +182,16 @@ void Node::shutdown()
     // Stop accepting new connections
     Logger::info("Stopping TCP servers...");
     server_tcp_server_.close();
+
+    // Stop RDMA polling thread (decode nodes only)
+    if (config_.role == "decode" && rdma_poll_running_) {
+        Logger::info("Stopping RDMA polling thread...");
+        rdma_poll_running_ = false;
+        if (rdma_poll_thread_.joinable()) {
+            rdma_poll_thread_.join();
+        }
+        Logger::info("RDMA polling thread stopped");
+    }
 
     // Shutdown RDMA
     Logger::info("Shutting down RDMA...");
@@ -269,4 +294,56 @@ bool Node::start_vllm_server()
                  " (connector=" + std::string(config_.use_gpu ? "rdma_connector" : "MooncakeConnector") + ")");
     sleep(5); // Simple approach, or implement health check
     return true;
+}
+
+void Node::rdma_poll_loop()
+{
+    Logger::info("RDMA poll loop started");
+    std::vector<ibv_wc> wcs;
+
+    while (rdma_poll_running_) {
+        int n = rdma_engine_.poll_recv_cq(wcs, 32);
+
+        if (n <= 0) {
+            // No completions, sleep briefly
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            continue;
+        }
+
+        // Process completions
+        for (int i = 0; i < n; ++i) {
+            uint16_t seq_num, layer_id;
+            RequestTrackerLayer::decode_layer_id(wcs[i].imm_data, seq_num, layer_id);
+
+            std::string request_id = request_tracker_layer_.resolve_seq_num(seq_num);
+            if (request_id.empty()) {
+                Logger::warning("RDMA completion: unknown seq_num " + std::to_string(seq_num));
+                continue;
+            }
+
+            Logger::debug("RDMA layer received: request=" + request_id +
+                         " seq_num=" + std::to_string(seq_num) +
+                         " layer=" + std::to_string(layer_id));
+
+            bool all_done = request_tracker_layer_.mark_layer_received(request_id, layer_id);
+
+            if (all_done) {
+                // All layers received - push KV_TRANSFER_COMPLETE event to queue
+                Logger::info("All layers received for request " + request_id + " — triggering decode");
+
+                auto msg = std::make_unique<Message>();
+                msg->type = MessageType::KV_TRANSFER_COMPLETE;
+                msg->request_info.request_id = request_id;
+                // Copy other needed fields from tracker if needed
+                RequestTrackerLayer::RequestInfo info;
+                if (request_tracker_layer_.get_request(request_id, info)) {
+                    msg->request_info.max_tokens = info.max_output_tokens;
+                }
+
+                event_queue_.push(Event(-1, std::move(msg)));
+            }
+        }
+    }
+
+    Logger::info("RDMA poll loop stopped");
 }
