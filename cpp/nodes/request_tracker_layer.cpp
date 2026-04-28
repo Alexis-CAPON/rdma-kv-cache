@@ -53,8 +53,9 @@ uint16_t RequestTrackerLayer::add_request(
         }
     }
 
-    // Assign sequence number
-    uint16_t seq_num = next_seq_num_++;
+    // Use slot_id as sequence number (deterministic, no hash collisions)
+    // This ensures prefill and decode use the same seq_num for imm_data encoding
+    uint16_t seq_num = static_cast<uint16_t>(assigned_slot);
 
     // Calculate base offset
     size_t base_offset = layout_.get_slot_base_offset(assigned_slot);

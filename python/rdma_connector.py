@@ -305,8 +305,18 @@ class RDMAConnector(ExampleConnector):
               # Extract layer ID for imm_data encoding
               layer_id = self._extract_layer_id(layer_name)
 
-              # Get request sequence number (hash-based for now, could be from orchestrator)
-              request_seq = self._get_request_seq(request.token_ids, request.mm_hashes)
+              # Get request sequence number from slot_id (orchestrator-assigned)
+              # This matches the seq_num used by decode's RequestTrackerLayer
+              slot_id = getattr(request, 'slot_id', None)
+              if slot_id is not None:
+                  request_seq = slot_id  # Use orchestrator-assigned slot as seq_num
+              else:
+                  # Fallback to hash-based for backward compatibility
+                  request_seq = self._get_request_seq(request.token_ids, request.mm_hashes)
+                  logger.warning(
+                      f"Request missing slot_id, using legacy hash-based seq_num={request_seq}. "
+                      f"This may cause decode-side lookup failures!"
+                  )
 
               # RDMA write K and V caches
               if kv_cache.shape[0] == 2:  # Standard format: (2, num_tokens, hidden_dim)
