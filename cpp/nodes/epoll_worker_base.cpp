@@ -1,4 +1,4 @@
-#include "cpp/nodes/epoll_worker.h"
+#include "cpp/nodes/epoll_worker_base.h"
 #include <unistd.h>
 #include <fcntl.h>
 #include <cerrno>
@@ -10,34 +10,16 @@
 #include <netinet/tcp.h>
 #include "cpp/common/types.h"
 
-// Constructor for Orchestrator
-EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server, NodeRegistry &node_registry)
-    : running_(false),
-      event_queue_(eventqueue),
-      client_tcp_server_(client_tcp_server),
-      server_tcp_server_(server_tcp_server),
-      epoll_fd_(-1),
-      node_registry_(node_registry),
-      has_client_tcp_server_(true)
-
-{
-    Logger::info("EpollWorker initialized with client TCP server on port " + std::to_string(client_tcp_server_.get_fd()) +
-                 " and server TCP server on port " + std::to_string(server_tcp_server_.get_fd()));
-}
-
-// Constructor for Prefill/Decode nodes
-EpollWorker::EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server, NodeInfo &node_info)
+EpollWorkerBase::EpollWorkerBase(EventQueue &eventqueue, TCPServer &server_tcp_server)
     : running_(false),
       event_queue_(eventqueue),
       server_tcp_server_(server_tcp_server),
-      node_info_(node_info),
-      epoll_fd_(-1),
-      has_client_tcp_server_(false)
+      epoll_fd_(-1)
 {
-    Logger::info("EpollWorker initialized with server TCP server on port " + std::to_string(server_tcp_server_.get_fd()));
+    Logger::info("EpollWorkerBase initialized with server TCP server on port " + std::to_string(server_tcp_server_.get_fd()));
 }
 
-EpollWorker::~EpollWorker()
+EpollWorkerBase::~EpollWorkerBase()
 {
     stop();
 
@@ -47,96 +29,7 @@ EpollWorker::~EpollWorker()
     }
 }
 
-void EpollWorker::start()
-{
-    if (running_)
-    {
-        Logger::warning("EpollWorker already running");
-        return;
-    }
-
-    // Create epoll instance
-    epoll_fd_ = epoll_create1(EPOLL_CLOEXEC);
-    if (epoll_fd_ < 0)
-    {
-        Logger::error("epoll_create1() failed: " + std::string(strerror(errno)));
-        return;
-    }
-
-    Logger::info("EpollWorker: created epoll fd=" + std::to_string(epoll_fd_));
-
-    if (has_client_tcp_server_)
-    {
-        // Set client listen socket to non-blocking (CRITICAL for edge-triggered epoll)
-        if (!set_nonblocking(client_tcp_server_.get_fd()))
-        {
-            Logger::error("Failed to set client listen socket non-blocking");
-            close(epoll_fd_);
-            return;
-        }
-
-        // Add client listening socket to epoll
-        struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLET; // Edge-triggered
-        ev.data.fd = client_tcp_server_.get_fd();
-
-        if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, client_tcp_server_.get_fd(), &ev) < 0)
-        {
-            Logger::error("epoll_ctl() failed for client listen socket: " + std::string(strerror(errno)));
-            close(epoll_fd_);
-            return;
-        }
-
-        // Add to connections map (so we can identify it later)
-        {
-            std::lock_guard<std::mutex> lock(connections_mutex_);
-            ConnectionState &state = connections_[client_tcp_server_.get_fd()];
-            state.type = LISTEN_CLIENT;
-            state.reading_header = true;
-        }
-
-        Logger::info("EpollWorker: added client listen socket fd=" + std::to_string(client_tcp_server_.get_fd()));
-    }
-
-    // Set server listen socket to non-blocking (CRITICAL for edge-triggered epoll)
-    if (!set_nonblocking(server_tcp_server_.get_fd()))
-    {
-        Logger::error("Failed to set server listen socket non-blocking");
-        close(epoll_fd_);
-        epoll_fd_ = -1;
-        return;
-    }
-
-    // Add server listening socket to epoll
-    ev.events = EPOLLIN | EPOLLET; // Edge-triggered
-    ev.data.fd = server_tcp_server_.get_fd();
-
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, server_tcp_server_.get_fd(), &ev) < 0)
-    {
-        Logger::error("epoll_ctl() failed for server listen socket: " + std::string(strerror(errno)));
-        close(epoll_fd_);
-        epoll_fd_ = -1;
-        return;
-    }
-
-    // Add to connections map
-    {
-        std::lock_guard<std::mutex> lock(connections_mutex_);
-        ConnectionState &state = connections_[server_tcp_server_.get_fd()];
-        state.type = LISTEN_SERVER;
-        state.reading_header = true;
-    }
-
-    Logger::info("EpollWorker: added server listen socket fd=" + std::to_string(server_tcp_server_.get_fd()));
-
-    // Start I/O thread
-    running_ = true;
-    io_thread_ = std::thread(&EpollWorker::run, this);
-
-    Logger::info("EpollWorker started");
-}
-
-void EpollWorker::stop()
+void EpollWorkerBase::stop()
 {
     if (!running_)
     {
@@ -167,7 +60,7 @@ void EpollWorker::stop()
 
 // ========== Main Event Loop ==========
 
-void EpollWorker::run()
+void EpollWorkerBase::run()
 {
     struct epoll_event events[MAX_EPOLL_EVENTS];
 
@@ -258,76 +151,9 @@ void EpollWorker::run()
     Logger::info("EpollWorker: exited event loop");
 }
 
-// ========== Accept Handlers ==========
-
-void EpollWorker::handle_client_accept()
-{
-    // Edge-triggered: must accept all pending connections
-    while (true)
-    {
-        auto new_conn = client_tcp_server_.accept();
-
-        if (!new_conn)
-        {
-            // No more connections (EAGAIN) or error
-            break;
-        }
-
-        int fd = new_conn->get_fd();
-        Logger::info("EpollWorker: accepted new client fd=" + std::to_string(fd));
-
-        // Add to epoll
-        if (!add_connection(std::move(new_conn), CLIENT_CONN))
-        {
-            Logger::error("EpollWorker: failed to add client connection fd=" + std::to_string(fd));
-        }
-    }
-}
-
-void EpollWorker::handle_server_accept()
-{
-    // Edge-triggered: must accept all pending connections
-    while (true)
-    {
-        auto new_conn = server_tcp_server_.accept();
-
-        if (!new_conn)
-        {
-            // No more connections (EAGAIN) or error
-            break;
-        }
-
-        if (node_info_.role == NodeRole::PREFILL || node_info_.role == NodeRole::DECODE)
-        {
-            // We add the connection to the NodeInfo
-            // FIX: Protect vector access with mutex (race with connect_to_peer and worker reads)
-            {
-                std::lock_guard<std::mutex> lock(node_info_mutex_);
-                node_info_.node_other_node_fd.push_back({new_conn->get_node_host(), new_conn->get_fd()});
-            }
-            Logger::info("EpollWorker: accepted new server connection from " + new_conn->get_node_host() + " fd=" + std::to_string(new_conn->get_fd()));
-        }
-
-        else
-        {
-            // We add the connection to the registry
-            node_registry_.add_node_fd(new_conn->get_node_host(), new_conn->get_fd());
-        }
-
-        int fd = new_conn->get_fd();
-        Logger::info("EpollWorker: accepted new server connection fd=" + std::to_string(fd));
-
-        // Add to epoll
-        if (!add_connection(std::move(new_conn), SERVER_CONN))
-        {
-            Logger::error("EpollWorker: failed to add server connection fd=" + std::to_string(fd));
-        }
-    }
-}
-
 // ========== I/O Handlers ==========
 
-void EpollWorker::handle_read(int fd)
+void EpollWorkerBase::handle_read(int fd)
 {
     std::unique_lock<std::mutex> lock(connections_mutex_);
 
@@ -392,7 +218,7 @@ void EpollWorker::handle_read(int fd)
     parse_messages(state, fd);
 }
 
-void EpollWorker::handle_write(int fd)
+void EpollWorkerBase::handle_write(int fd)
 {
     std::unique_lock<std::mutex> lock(connections_mutex_);
 
@@ -483,7 +309,7 @@ void EpollWorker::handle_write(int fd)
     }
 }
 
-void EpollWorker::handle_error(int fd)
+void EpollWorkerBase::handle_error(int fd)
 {
     Logger::info("EpollWorker: error on fd=" + std::to_string(fd));
     remove_connection(fd);
@@ -491,7 +317,7 @@ void EpollWorker::handle_error(int fd)
 
 // ========== Message Processing ==========
 
-void EpollWorker::parse_messages(ConnectionState &state, int fd)
+void EpollWorkerBase::parse_messages(ConnectionState &state, int fd)
 {
     // Try to extract complete messages from buffer
     while (true)
@@ -584,7 +410,7 @@ void EpollWorker::parse_messages(ConnectionState &state, int fd)
 
 // ========== Connection Management ==========
 
-bool EpollWorker::add_connection(std::unique_ptr<Connection> conn, SocketType type)
+bool EpollWorkerBase::add_connection(std::unique_ptr<Connection> conn, SocketType type)
 {
     int fd = conn->get_fd();
 
@@ -626,7 +452,7 @@ bool EpollWorker::add_connection(std::unique_ptr<Connection> conn, SocketType ty
     return true;
 }
 
-void EpollWorker::remove_connection(int fd)
+void EpollWorkerBase::remove_connection(int fd)
 {
     Logger::info("EpollWorker: removing connection fd=" + std::to_string(fd));
 
@@ -648,7 +474,7 @@ void EpollWorker::remove_connection(int fd)
     Logger::debug("EpollWorker: removed connection fd=" + std::to_string(fd));
 }
 
-bool EpollWorker::modify_epoll(int fd, uint32_t events)
+bool EpollWorkerBase::modify_epoll(int fd, uint32_t events)
 {
     struct epoll_event ev;
     ev.events = events;
@@ -664,7 +490,7 @@ bool EpollWorker::modify_epoll(int fd, uint32_t events)
     return true;
 }
 
-bool EpollWorker::set_nonblocking(int fd)
+bool EpollWorkerBase::set_nonblocking(int fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags == -1)
@@ -684,7 +510,7 @@ bool EpollWorker::set_nonblocking(int fd)
 
 // ========== Public Interface ==========
 
-void EpollWorker::enqueue_response(int client_fd, const Message &response)
+void EpollWorkerBase::enqueue_response(int client_fd, const Message &response)
 {
     // Serialize message with framing
     std::vector<uint8_t> payload = serialize_message(response);
@@ -732,31 +558,7 @@ void EpollWorker::enqueue_response(int client_fd, const Message &response)
                   " bytes for client_fd=" + std::to_string(client_fd));
 }
 
-bool EpollWorker::connect_to_orchestrator(const std::string &host, uint16_t port)
-{
-    // Create NEW client connection (separate from our listening socket)
-    auto conn = std::make_unique<Connection>();
-
-    // This creates a new socket() and connect()s to the peer
-    if (!conn->connect(host, port))
-    {
-        Logger::error("EpollWorker: failed to connect to orchestrator " + host + ":" + std::to_string(port));
-        return false;
-    }
-
-    int fd = conn->get_fd();
-    orchestrator_fd_ = fd;
-
-    node_info_.node_own_orchestrator_fd = orchestrator_fd_;
-
-    Logger::info("EpollWorker: connected to orchestrator " + host + ":" + std::to_string(port) +
-                 " (fd=" + std::to_string(orchestrator_fd_) + ")");
-
-    // Add to epoll and connections map
-    return add_connection(std::move(conn), SERVER_CONN);
-}
-
-bool EpollWorker::connect_to_peer(const std::string &host, uint16_t port)
+bool EpollWorkerBase::connect_to_peer(const std::string &host, uint16_t port)
 {
     // Create NEW client connection (separate from our listening socket)
     auto conn = std::make_unique<Connection>();
@@ -781,20 +583,4 @@ bool EpollWorker::connect_to_peer(const std::string &host, uint16_t port)
 
     // Add to epoll and connections map
     return add_connection(std::move(conn), SERVER_CONN);
-}
-
-bool EpollWorker::send_node_info_to_orchestrator()
-{
-    if (orchestrator_fd_ < 0)
-    {
-        Logger::warning("EpollWorker: not connected to orchestrator, cannot send node info");
-        return false;
-    }
-
-    Message msg = Message::create_rdma_process_registration(node_info_.node_id, node_info_);
-    enqueue_response(orchestrator_fd_, msg);
-
-    Logger::info("EpollWorker: sent node info to orchestrator");
-
-    return true;
 }

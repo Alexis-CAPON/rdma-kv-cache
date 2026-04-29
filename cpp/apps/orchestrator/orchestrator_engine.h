@@ -5,8 +5,8 @@
 #include <memory>
 #include "cpp/common/config.h"
 #include "cpp/common/logger.h"
-#include "cpp/nodes/epoll_worker.h"
-#include "cpp/nodes/worker_pool.h"
+#include "cpp/nodes/epoll_worker_orchestrator.h"
+#include "cpp/nodes/worker_pool_orchestrator.h"
 #include "cpp/nodes/event_queue.h"
 #include "cpp/network/tcp_server.h"
 #include "cpp/apps/orchestrator/node_registry.h"
@@ -114,8 +114,8 @@ private:
 
     // Event processing
     EventQueue event_queue_;
-    EpollWorker epoll_worker_;
-    WorkerPool worker_pool_;
+    EpollWorkerOrchestrator epoll_worker_;
+    WorkerPoolOrchestrator worker_pool_;
 
     NodeRegistry node_registry_;
     RequestRouter request_router_;

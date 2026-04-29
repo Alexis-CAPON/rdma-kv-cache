@@ -1,24 +1,19 @@
-#include "cpp/nodes/worker_pool.h"
+#include "cpp/nodes/worker_pool_orchestrator.h"
 #include "cpp/common/logger.h"
 #include <thread>
 
-WorkerPool::WorkerPool(
+WorkerPoolOrchestrator::WorkerPoolOrchestrator(
     uint32_t num_workers,
     EventQueue &event_queue,
-    EpollWorker &epoll_worker,
+    EpollWorkerOrchestrator &epoll_worker,
     const Config &config,
     const std::string &node_id,
     NodeRegistry &node_registry,
     RdmaExchangeTracker &rdma_exchange_tracker,
     RequestTrackerOrchestrator &request_tracker_orchestrator,
     RequestRouter &request_router)
-    : num_workers_(num_workers),
-      node_id_(node_id),
-      running_(false),
-      total_ops_(0),
-      event_queue_(event_queue),
+    : WorkerPoolBase(num_workers, event_queue, config, node_id),
       epoll_worker_(epoll_worker),
-      config_(config),
       node_registry_(node_registry),
       rdma_exchange_tracker_(rdma_exchange_tracker),
       request_tracker_orchestrator_(request_tracker_orchestrator),
@@ -30,9 +25,9 @@ WorkerPool::WorkerPool(
 
     /*
     // Instance for Orchestrator
-    Worker(
+    WorkerOrchestrator(
         uint32_t worker_id,
-        EpollWorker &epoll_worker,
+        EpollWorkerOrchestrator &epoll_worker,
         const Config &config,
         uint64_t node_id,
         std::atomic<uint64_t> *server_ops_counter = nullptr,
@@ -45,7 +40,7 @@ WorkerPool::WorkerPool(
     workers_.reserve(num_workers_);
     for (uint32_t i = 0; i < num_workers_; i++)
     {
-        workers_.push_back(std::make_unique<Worker>(
+        workers_.push_back(std::make_unique<WorkerOrchestrator>(
             i, // worker_id
             epoll_worker_,
             config_,
@@ -57,67 +52,18 @@ WorkerPool::WorkerPool(
             request_router_)); // Pass server-side operation counter
     }
 
-    Logger::info("WorkerPool initialized with " + std::to_string(workers_.size()) + " Worker instances");
+    Logger::info("WorkerPoolOrchestrator initialized with " + std::to_string(workers_.size()) + " WorkerOrchestrator instances");
 }
 
-WorkerPool::WorkerPool(
-    uint32_t num_workers,
-    EventQueue &event_queue,
-    EpollWorker &epoll_worker,
-    const Config &config,
-    const std::string &node_id,
-    NodeInfo &node_info,
-    RDMAEngine &rdma_engine,
-    RequestTrackerLayer &request_tracker_layer,
-    Node *node_ptr)
-    : num_workers_(num_workers),
-      node_id_(node_id),
-      running_(false),
-      total_ops_(0),
-      event_queue_(event_queue),
-      epoll_worker_(epoll_worker),
-      config_(config),
-      node_info_(node_info),
-      rdma_engine_(rdma_engine),
-      request_tracker_layer_(request_tracker_layer),
-      node_ptr_(node_ptr)
-
-{
-    Logger::info("WorkerPool initializing with " + std::to_string(num_workers_) + " workers");
-
-    // Pre-create Worker instances (one per thread)
-    workers_.reserve(num_workers_);
-    for (uint32_t i = 0; i < num_workers_; i++)
-    {
-        workers_.push_back(std::make_unique<Worker>(
-            i, // worker_id
-            epoll_worker_,
-            config_,
-            node_id_,
-            &total_ops_,
-            node_info_,
-            rdma_engine_,
-            request_tracker_layer_,
-            node_ptr_)); // Pass server-side operation counter
-    }
-
-    Logger::info("WorkerPool initialized with " + std::to_string(workers_.size()) + " Worker instances");
-}
-
-WorkerPool::~WorkerPool()
-{
-    stop();
-}
-
-void WorkerPool::start()
+void WorkerPoolOrchestrator::start()
 {
     if (running_.load())
     {
-        Logger::warning("WorkerPool::start() called but already running");
+        Logger::warning("WorkerPoolOrchestrator::start() called but already running");
         return;
     }
 
-    Logger::info("Starting WorkerPool with " + std::to_string(num_workers_) + " threads");
+    Logger::info("Starting WorkerPoolOrchestrator with " + std::to_string(num_workers_) + " threads");
 
     running_.store(true);
 
@@ -125,20 +71,20 @@ void WorkerPool::start()
     threads_.reserve(num_workers_);
     for (uint32_t i = 0; i < num_workers_; i++)
     {
-        threads_.emplace_back(&WorkerPool::worker_thread_function, this, i);
+        threads_.emplace_back(&WorkerPoolOrchestrator::worker_thread_function, this, i);
     }
 
-    Logger::info("WorkerPool started successfully");
+    Logger::info("WorkerPoolOrchestrator started successfully");
 }
 
-void WorkerPool::stop()
+void WorkerPoolOrchestrator::stop()
 {
     if (!running_.load())
     {
         return; // Already stopped
     }
 
-    Logger::info("Stopping WorkerPool...");
+    Logger::info("Stopping WorkerPoolOrchestrator...");
 
     // Signal all threads to stop
     running_.store(false);
@@ -157,14 +103,14 @@ void WorkerPool::stop()
 
     threads_.clear();
 
-    Logger::info("WorkerPool stopped (all threads joined)");
+    Logger::info("WorkerPoolOrchestrator stopped (all threads joined)");
 }
 
-void WorkerPool::worker_thread_function(uint32_t worker_id)
+void WorkerPoolOrchestrator::worker_thread_function(uint32_t worker_id)
 {
     Logger::info("Worker thread " + std::to_string(worker_id) + " started");
 
-    Worker *worker = workers_[worker_id].get();
+    WorkerOrchestrator *worker = workers_[worker_id].get();
 
     while (running_.load())
     {

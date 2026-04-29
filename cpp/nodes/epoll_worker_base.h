@@ -9,8 +9,8 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
+#include <sys/epoll.h>
 #include <chrono>
-#include "cpp/apps/orchestrator/node_registry.h"
 
 /**
  * EpollWorker - Unified epoll-based I/O handler
@@ -25,21 +25,14 @@
  * - State machine for partial message handling
  * - Unified handling for client and server connections
  */
-class EpollWorker
+class EpollWorkerBase
 {
 public:
-    EpollWorker(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server, NodeRegistry &node_registry);
-    EpollWorker(EventQueue &eventqueue, TCPServer &server_tcp_server, NodeInfo &node_info);
-    ~EpollWorker();
+    ~EpollWorkerBase();
 
     // Non-copyable
-    EpollWorker(const EpollWorker &) = delete;
-    EpollWorker &operator=(const EpollWorker &) = delete;
-
-    /**
-     * Start the epoll I/O thread
-     */
-    void start();
+    EpollWorkerBase(const EpollWorkerBase &) = delete;
+    EpollWorkerBase &operator=(const EpollWorkerBase &) = delete;
 
     /**
      * Stop the epoll I/O thread gracefully
@@ -52,28 +45,20 @@ public:
      */
     void enqueue_response(int fd, const Message &response);
 
-    bool connect_to_orchestrator(const std::string &host, uint16_t port);
     bool connect_to_peer(const std::string &host, uint16_t port);
 
-    bool send_node_info_to_orchestrator();
+protected:
+    EpollWorkerBase(EventQueue &eventqueue, TCPServer &server_tcp_server);
 
-    int get_orchestrator_fd() const
-    {
-        return orchestrator_fd_;
-    }
-
-private:
+    /**
+     * Start the epoll I/O thread
+     */
     // Configuration
     std::atomic<bool> running_;
     std::thread io_thread_;
 
-    EventQueue event_queue_;
-    TCPServer &client_tcp_server_;
+    EventQueue &event_queue_;
     TCPServer &server_tcp_server_;
-    NodeInfo &node_info_;
-    NodeRegistry &node_registry_;
-
-    int orchestrator_fd_ = -1; // File descriptor for orchestrator connection (if connected)
 
     // Socket types
     enum SocketType
@@ -118,14 +103,12 @@ private:
     std::unordered_map<int, ConnectionState> connections_;
     std::mutex connections_mutex_;
 
-    // Protects node_info_.node_other_node_fd vector access
-    // Separate from connections_mutex_ to avoid mixing concerns
-    std::mutex node_info_mutex_;
-
     // Constants
     static constexpr uint32_t MAX_MESSAGE_SIZE = 16 * 1024 * 1024; // 16 MiB
     static constexpr int MAX_EPOLL_EVENTS = 1024;
     static constexpr size_t RECV_BUFFER_SIZE = 8192; // 8 KB
+
+    virtual void start() = 0;
 
     // ========== Main Loop ==========
 
@@ -139,12 +122,12 @@ private:
     /**
      * Handle new client connection
      */
-    void handle_client_accept();
+    // virtual void handle_client_accept() = 0;
 
     /**
      * Handle new server connection
      */
-    void handle_server_accept();
+    virtual void handle_server_accept() = 0;
 
     // ========== I/O Handlers ==========
 
@@ -192,6 +175,4 @@ private:
      * Set socket to non-blocking mode
      */
     bool set_nonblocking(int fd);
-
-    bool is_membership_message(MessageType type);
 };

@@ -1,7 +1,7 @@
 #include "cpp/apps/orchestrator/orchestrator_engine.h"
 #include "cpp/network/tcp_server.h"
 #include "cpp/nodes/event_queue.h"
-#include "cpp/nodes/worker_pool.h"
+#include "cpp/nodes/worker_pool_orchestrator.h"
 #include <csignal>
 #include <stdexcept>
 #include <thread>

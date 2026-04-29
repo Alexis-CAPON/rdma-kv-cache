@@ -1,7 +1,7 @@
 #include "cpp/nodes/node.h"
 #include "cpp/network/tcp_server.h"
 #include "cpp/nodes/event_queue.h"
-#include "cpp/nodes/worker_pool.h"
+#include "cpp/nodes/worker_pool_node.h"
 #include "cpp/bindings/node_accessor.h"
 #include <csignal>
 #include <cerrno>
@@ -31,8 +31,7 @@ Node::Node(Config config)
           .buffer_size_bytes = config.memory.kv_buffer_mb * 1024UL * 1024UL,
           .max_concurrent_requests = config.memory.max_concurrent_requests,
           .num_layers = static_cast<int>(config.num_layers),
-          .layer_size_bytes = config.memory.layer_size_mb * 1024UL * 1024UL
-      }),
+          .layer_size_bytes = config.memory.layer_size_mb * 1024UL * 1024UL}),
       worker_pool_(config.worker_pool_size, event_queue_, epoll_worker_, config, config.node_id, node_info_, rdma_engine_, request_tracker_layer_, this)
 {
     Logger::info("Initializing Node " + config.role + " : " + config.hostname + ":" +
@@ -129,7 +128,8 @@ bool Node::start()
     // ========================================
     // 6. Start RDMA polling thread (decode nodes only)
     // ========================================
-    if (config_.role == "decode") {
+    if (config_.role == "decode")
+    {
         rdma_poll_running_ = true;
         rdma_poll_thread_ = std::thread(&Node::rdma_poll_loop, this);
         Logger::info("RDMA polling thread started for decode node");
@@ -184,10 +184,12 @@ void Node::shutdown()
     server_tcp_server_.close();
 
     // Stop RDMA polling thread (decode nodes only)
-    if (config_.role == "decode" && rdma_poll_running_) {
+    if (config_.role == "decode" && rdma_poll_running_)
+    {
         Logger::info("Stopping RDMA polling thread...");
         rdma_poll_running_ = false;
-        if (rdma_poll_thread_.joinable()) {
+        if (rdma_poll_thread_.joinable())
+        {
             rdma_poll_thread_.join();
         }
         Logger::info("RDMA polling thread stopped");
@@ -223,10 +225,13 @@ bool Node::start_vllm_server()
     {
         // GPUDirect RDMA path: use our custom RDMAConnector
         cmd = "python -m vllm.entrypoints.openai.api_server "
-              "--model " + config_.model_name + " "
-              "--port " + std::to_string(config_.vllm_port) + " "
-              "--kv-connector rdma_connector "
-              "--kv-role " + kv_role;
+              "--model " +
+              config_.model_name + " "
+                                   "--port " +
+              std::to_string(config_.vllm_port) + " "
+                                                  "--kv-connector rdma_connector "
+                                                  "--kv-role " +
+              kv_role;
     }
     else
     {
@@ -240,12 +245,15 @@ bool Node::start_vllm_server()
 
         std::string mooncake_cfg_content =
             "{\n"
-            "  \"local_hostname\": \"" + config_.hostname + "\",\n"
-            "  \"metadata_server\": \"" + config_.orchestrator_host + ":2379\",\n"
-            "  \"protocol\": \"rdma\",\n"
-            "  \"rdma_devices\": [\"" + rdma_device + "\"],\n"
-            "  \"use_gpu_direct\": false\n"
-            "}\n";
+            "  \"local_hostname\": \"" +
+            config_.hostname + "\",\n"
+                               "  \"metadata_server\": \"" +
+            config_.orchestrator_host + ":2379\",\n"
+                                        "  \"protocol\": \"rdma\",\n"
+                                        "  \"rdma_devices\": [\"" +
+            rdma_device + "\"],\n"
+                          "  \"use_gpu_direct\": false\n"
+                          "}\n";
 
         // Write mooncake config to a temp file before forking (mode 0600 for security)
         {
@@ -267,12 +275,15 @@ bool Node::start_vllm_server()
         }
 
         cmd = "MOONCAKE_CONFIG_PATH=" + mooncake_cfg_path + " "
-              "python -m vllm.entrypoints.openai.api_server "
-              "--model " + config_.model_name + " "
-              "--port " + std::to_string(config_.vllm_port) + " "
-              "--kv-connector MooncakeConnector "
-              "--kv-role " + kv_role + " "
-              "--device cpu";
+                                                            "python -m vllm.entrypoints.openai.api_server "
+                                                            "--model " +
+              config_.model_name + " "
+                                   "--port " +
+              std::to_string(config_.vllm_port) + " "
+                                                  "--kv-connector MooncakeConnector "
+                                                  "--kv-role " +
+              kv_role + " "
+                        "--device cpu";
     }
 
     vllm_pid = fork();
@@ -301,33 +312,38 @@ void Node::rdma_poll_loop()
     Logger::info("RDMA poll loop started");
     std::vector<ibv_wc> wcs;
 
-    while (rdma_poll_running_) {
+    while (rdma_poll_running_)
+    {
         int n = rdma_engine_.poll_recv_cq(wcs, 32);
 
-        if (n <= 0) {
+        if (n <= 0)
+        {
             // No completions, sleep briefly
             std::this_thread::sleep_for(std::chrono::microseconds(10));
             continue;
         }
 
         // Process completions
-        for (int i = 0; i < n; ++i) {
+        for (int i = 0; i < n; ++i)
+        {
             uint16_t seq_num, layer_id;
             RequestTrackerLayer::decode_layer_id(wcs[i].imm_data, seq_num, layer_id);
 
             std::string request_id = request_tracker_layer_.resolve_seq_num(seq_num);
-            if (request_id.empty()) {
+            if (request_id.empty())
+            {
                 Logger::warning("RDMA completion: unknown seq_num " + std::to_string(seq_num));
                 continue;
             }
 
             Logger::debug("RDMA layer received: request=" + request_id +
-                         " seq_num=" + std::to_string(seq_num) +
-                         " layer=" + std::to_string(layer_id));
+                          " seq_num=" + std::to_string(seq_num) +
+                          " layer=" + std::to_string(layer_id));
 
             bool all_done = request_tracker_layer_.mark_layer_received(request_id, layer_id);
 
-            if (all_done) {
+            if (all_done)
+            {
                 // All layers received - push KV_TRANSFER_COMPLETE event to queue
                 Logger::info("All layers received for request " + request_id + " — triggering decode");
 
@@ -336,7 +352,8 @@ void Node::rdma_poll_loop()
                 msg->request_info.request_id = request_id;
                 // Copy other needed fields from tracker if needed
                 RequestTrackerLayer::RequestInfo info;
-                if (request_tracker_layer_.get_request(request_id, info)) {
+                if (request_tracker_layer_.get_request(request_id, info))
+                {
                     msg->request_info.max_tokens = info.max_output_tokens;
                 }
 

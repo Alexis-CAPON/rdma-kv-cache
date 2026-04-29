@@ -6,13 +6,12 @@
 #include <memory>
 #include "cpp/common/config.h"
 #include "cpp/common/logger.h"
-#include "cpp/nodes/epoll_worker.h"
-#include "cpp/nodes/worker_pool.h"
+#include "cpp/nodes/epoll_worker_node.h"
+#include "cpp/nodes/worker_pool_node.h"
 #include "cpp/nodes/event_queue.h"
 #include "cpp/network/tcp_server.h"
 #include "cpp/rdma/rdma_engine.h"
 #include "cpp/common/types.h"
-#include "cpp/nodes/request_tracker.h"
 #include "cpp/nodes/request_tracker_layer.h"
 
 class Node
@@ -104,8 +103,8 @@ private:
 
     // Event processing
     EventQueue event_queue_;
-    EpollWorker epoll_worker_;
-    WorkerPool worker_pool_;
+    EpollWorkerNode epoll_worker_;
+    WorkerPoolNode worker_pool_;
 
     pid_t vllm_pid = -1;
 
