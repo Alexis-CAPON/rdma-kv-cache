@@ -249,6 +249,11 @@ static void write_request_info(std::vector<uint8_t> &buf, const RequestInfo &r)
     write_uint32(buf, static_cast<uint32_t>(r.max_tokens));
     write_string(buf, r.prefill_node_id);
     write_string(buf, r.decode_node_id);
+
+    // Serialize slot allocation
+    write_uint32(buf, static_cast<uint32_t>(r.slot_id));
+    write_uint64(buf, r.slot_base_offset);
+
     write_uint64(buf, r.timestamp_created);
     write_uint64(buf, r.timestamp_prefill_start);
     write_uint64(buf, r.timestamp_prefill_done);
@@ -270,6 +275,15 @@ static bool read_request_info(const uint8_t *&p, const uint8_t *end, RequestInfo
         return false;
     if (!read_string(p, end, r.decode_node_id))
         return false;
+
+    // Deserialize slot allocation
+    uint32_t slot_id_u;
+    if (!read_uint32(p, end, slot_id_u))
+        return false;
+    r.slot_id = static_cast<int>(slot_id_u);
+    if (!read_uint64(p, end, r.slot_base_offset))
+        return false;
+
     if (!read_uint64(p, end, r.timestamp_created))
         return false;
     if (!read_uint64(p, end, r.timestamp_prefill_start))

@@ -618,6 +618,10 @@ void Worker::handle_assign_request(int orchestrator_fd, Message *msg)
                   " handling ASSIGN_REQUEST from fd=" + std::to_string(orchestrator_fd) +
                   " request_id=" + msg->request_info.request_id);
 
+    // Verify slot allocation was received correctly
+    Logger::info("Prefill received: slot_id=" + std::to_string(msg->request_info.slot_id) +
+                 ", slot_base_offset=" + std::to_string(msg->request_info.slot_base_offset));
+
     // 1. Get decode node RDMA info
     std::string decode_node_id = msg->request_info.decode_node_id;
 
