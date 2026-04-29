@@ -33,6 +33,7 @@ High-performance LLM inference system that separates prefill and decode phases a
 | **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)**       | Detailed deployment and API usage           |
 | **[BENCHMARK_GUIDE.md](BENCHMARK_GUIDE.md)**         | Benchmarking and performance testing        |
 | **[VERIFICATION_REPORT.md](VERIFICATION_REPORT.md)** | End-to-end implementation verification      |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**     | Deployment topology & request lifecycle diagrams |
 
 ## Architecture
 
