@@ -118,6 +118,10 @@ private:
     std::unordered_map<int, ConnectionState> connections_;
     std::mutex connections_mutex_;
 
+    // Protects node_info_.node_other_node_fd vector access
+    // Separate from connections_mutex_ to avoid mixing concerns
+    std::mutex node_info_mutex_;
+
     // Constants
     static constexpr uint32_t MAX_MESSAGE_SIZE = 16 * 1024 * 1024; // 16 MiB
     static constexpr int MAX_EPOLL_EVENTS = 1024;

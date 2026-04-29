@@ -265,8 +265,29 @@ void Worker::handle_prefill_complete_orchestrator(int server_fd, Message *msg)
     }
     else
     {
+        // FIX: Properly handle failure - undo load increments and free slot
         Logger::error("Failed to find decode node fd for node_id=" + msg->request_info.decode_node_id +
                       " when handling PREFILL_COMPLETE_ORCHESTRATOR for request_id=" + msg->request_info.request_id);
+
+        // Update status to FAILED
+        request_tracker_orchestrator_.update_status(msg->request_info.request_id, RequestStatus::FAILED);
+
+        // Free slot allocation
+        request_router_.free_slot(msg->request_info.request_id);
+
+        // Decrement load tracking for both nodes (undo the increments from handle_client_request)
+        request_router_.decrement_node_load(msg->request_info.prefill_node_id);
+        request_router_.decrement_node_load(msg->request_info.decode_node_id);
+
+        // Send error response to client
+        auto client_fd = request_tracker_orchestrator_.get_client_fd(msg->request_info.request_id);
+        if (client_fd)
+        {
+            std::string error_msg = "Decode node " + msg->request_info.decode_node_id + " not found";
+            Message error_response = Message::create_request_failed(config_.orchestrator_id, msg->request_info, error_msg);
+            send_client_response(client_fd.value(), error_response);
+            Logger::info("Sent error response to client for request_id=" + msg->request_info.request_id);
+        }
     }
 }
 

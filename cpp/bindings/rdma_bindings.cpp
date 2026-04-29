@@ -215,8 +215,10 @@ public:
 
     /**
      * Get lkey for a GPU pointer (needed for RDMA send)
+     * Returns std::nullopt if pointer is not in any registered region
+     * (0 is a valid lkey, so we use optional to distinguish not-found)
      */
-    uint32_t get_lkey_for_ptr(uint64_t gpu_ptr)
+    std::optional<uint32_t> get_lkey_for_ptr(uint64_t gpu_ptr)
     {
         for (const auto &[name, region] : registered_regions_)
         {
@@ -227,7 +229,7 @@ public:
             }
         }
         Logger::error("No registered region contains ptr 0x" + std::to_string(gpu_ptr));
-        return 0;
+        return std::nullopt;
     }
 
     // ========================================
@@ -248,8 +250,8 @@ public:
         }
 
         // Find lkey for this local address
-        uint32_t lkey = get_lkey_for_ptr(local_addr);
-        if (lkey == 0)
+        auto lkey = get_lkey_for_ptr(local_addr);
+        if (!lkey)
         {
             Logger::error("Cannot RDMA write from unregistered memory 0x" +
                           std::to_string(local_addr));
@@ -264,7 +266,7 @@ public:
             bool success = rdma_engine_->post_write_external(
                 peer_id,
                 local_addr,
-                lkey,
+                lkey.value(),
                 remote_offset,
                 size,
                 imm_data,  // ✓ Now passes actual layer identification
@@ -406,7 +408,7 @@ PYBIND11_MODULE(rdma_bindings, m)
              "Register external GPU memory with RDMA")
         .def("get_lkey_for_ptr", &RDMABindings::get_lkey_for_ptr,
              py::arg("gpu_ptr"),
-             "Get lkey for a GPU pointer")
+             "Get lkey for a GPU pointer (returns None if not registered)")
         .def("rdma_write", &RDMABindings::rdma_write,
              py::arg("peer_id"),
              py::arg("local_addr"),

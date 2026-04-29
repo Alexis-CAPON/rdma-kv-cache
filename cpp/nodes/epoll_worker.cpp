@@ -300,7 +300,11 @@ void EpollWorker::handle_server_accept()
         if (node_info_.role == NodeRole::PREFILL || node_info_.role == NodeRole::DECODE)
         {
             // We add the connection to the NodeInfo
-            node_info_.node_other_node_fd.push_back({new_conn->get_node_host(), new_conn->get_fd()});
+            // FIX: Protect vector access with mutex (race with connect_to_peer and worker reads)
+            {
+                std::lock_guard<std::mutex> lock(node_info_mutex_);
+                node_info_.node_other_node_fd.push_back({new_conn->get_node_host(), new_conn->get_fd()});
+            }
             Logger::info("EpollWorker: accepted new server connection from " + new_conn->get_node_host() + " fd=" + std::to_string(new_conn->get_fd()));
         }
 
@@ -766,7 +770,11 @@ bool EpollWorker::connect_to_peer(const std::string &host, uint16_t port)
 
     int peer_fd = conn->get_fd();
 
-    node_info_.node_other_node_fd.push_back({host, peer_fd});
+    // FIX: Protect vector access with mutex (race with handle_server_accept and worker reads)
+    {
+        std::lock_guard<std::mutex> lock(node_info_mutex_);
+        node_info_.node_other_node_fd.push_back({host, peer_fd});
+    }
 
     Logger::info("EpollWorker: connected to peer " + host + ":" + std::to_string(port) +
                  " (fd=" + std::to_string(peer_fd) + ")");
