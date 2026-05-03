@@ -60,6 +60,9 @@ Config Config::fromFile(const std::string &path)
 
     config.num_layers = yaml["num_layers"] ? yaml["num_layers"].as<uint32_t>() : 12;
 
+    config.vllm_port = yaml["vllm_port"] ? yaml["vllm_port"].as<uint32_t>() : 8000;
+    config.model_name = yaml["model_name"] ? yaml["model_name"].as<std::string>() : "";
+
     // Transfer backend selection
     config.use_gpu = yaml["use_gpu"] ? yaml["use_gpu"].as<bool>() : true;
 
