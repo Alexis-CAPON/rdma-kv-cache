@@ -264,6 +264,20 @@ void open_ib_device(RdmaContext &ctx, const std::string &dev_name)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  alloc_and_register_gpu_mem   (only compiled when ENABLE_GPU_DIRECT is set)
+//
+//  Allocates a buffer in GPU HBM2 with cudaMalloc and registers it as an RDMA
+//  Memory Region via ibv_reg_mr.
+//
+//  The GPUDirect RDMA path through ibv_reg_mr:
+//    1. libibverbs calls into the mlx5 provider.
+//    2. The provider calls the kernel verb (via /dev/infiniband/uverbs0).
+//    3. ib_core calls nvidia_peermem, which pins the physical HBM2 pages.
+//    4. ib_core programs the HCA's MPT with those physical addresses.
+//    5. ibv_reg_mr returns an ibv_mr* with valid lkey and rkey.
+//
+//  IBV_ACCESS_RELAXED_ORDERING:
+//  Without RELAXED_ORDERING the HCA inserts PCIe fences between every write
+//  transaction, costing ~30% bandwidth. Requires OFED >= 5.0, Linux >= 5.2.
 // ─────────────────────────────────────────────────────────────────────────────
 #ifdef ENABLE_GPU_DIRECT
 void alloc_and_register_gpu_mem(RdmaContext &ctx,

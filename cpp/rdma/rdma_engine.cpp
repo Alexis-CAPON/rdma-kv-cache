@@ -483,6 +483,8 @@ bool RDMAEngine::probe_and_bind_devices()
         // CPU-only mode: no GPU probing
         rdma_ctx_.gpu_id = 0;
         node_info_.gpu_id = 0;
+        node_info_.gpu_name = "CPU-only";
+        node_info_.gpu_numa = 0;
 #endif
 
         Logger::info("RDMAEngine: Selected GPU" + std::to_string(rdma_ctx_.gpu_id) +
