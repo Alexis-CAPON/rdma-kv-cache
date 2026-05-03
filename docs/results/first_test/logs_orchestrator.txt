@@ -115,3 +115,37 @@ tail: /users/Alexis/rdma-kv-cache/logs/orchestrator.log: file truncated
 [2026-05-03 17:06:54] [INFO] RdmaExchangeTracker: Node 4015515319022553377 is RDMA ready (2/2)
 [2026-05-03 17:06:54] [INFO] RdmaExchangeTracker: All nodes RDMA ready! Cluster operational.
 [2026-05-03 17:06:54] [INFO] All nodes are ready for RDMA communication. Orchestrator can now start processing client requests and assigning them to prefill nodes.
+[2026-05-03 17:27:38] [INFO] Received termination signal
+[2026-05-03 17:27:39] [INFO] Shutting down...
+[2026-05-03 17:27:39] [INFO] Shutting down Orchestrator...
+[2026-05-03 17:27:39] [INFO] Stopping TCP servers...
+[2026-05-03 17:27:39] [INFO] Stopping EpollWorker...
+[2026-05-03 17:27:39] [INFO] Stopping EpollWorker...
+[2026-05-03 17:27:39] [INFO] EpollWorker: exited event loop
+[2026-05-03 17:27:39] [INFO] EpollWorker stopped
+[2026-05-03 17:27:39] [INFO] Stopping WorkerPool...
+[2026-05-03 17:27:39] [INFO] Stopping WorkerPoolOrchestrator...
+[2026-05-03 17:27:39] [INFO] Worker thread 3 stopped (1 events processed)
+[2026-05-03 17:27:39] [INFO] Worker thread 2 stopped (1 events processed)
+[2026-05-03 17:27:39] [INFO] Worker thread 1 stopped (1 events processed)
+[2026-05-03 17:27:39] [INFO] Worker thread 0 stopped (1 events processed)
+[2026-05-03 17:27:39] [INFO] WorkerPoolOrchestrator stopped (all threads joined)
+[2026-05-03 17:27:39] [INFO] ========================================
+[2026-05-03 17:27:39] [INFO] Orchestrator Shutdown Complete
+[2026-05-03 17:27:39] [INFO] Cluster stats:
+[2026-05-03 17:27:39] [INFO]   Registered prefill nodes: 1/1
+[2026-05-03 17:27:39] [INFO]   Registered decode nodes: 1/1
+[2026-05-03 17:27:39] [INFO]   Ready nodes: 2
+[2026-05-03 17:27:39] [INFO]   Topology validated: Yes
+[2026-05-03 17:27:39] [INFO]   Cluster operational: Yes
+[2026-05-03 17:27:39] [INFO] Request stats:
+[2026-05-03 17:27:39] [INFO]   Total requests: 0
+[2026-05-03 17:27:39] [INFO]   Completed: 0
+[2026-05-03 17:27:39] [INFO]   Failed: 0
+[2026-05-03 17:27:39] [INFO] ========================================
+[2026-05-03 17:27:39] [INFO] Orchestrator engine shut down cleanly
+[2026-05-03 17:27:39] [INFO] Worker Base 0 destroyed (1 events processed)
+[2026-05-03 17:27:39] [INFO] Worker Base 1 destroyed (1 events processed)
+[2026-05-03 17:27:39] [INFO] Worker Base 2 destroyed (1 events processed)
+[2026-05-03 17:27:39] [INFO] Worker Base 3 destroyed (1 events processed)
+[2026-05-03 17:27:39] [INFO] EventQueue destroyed (had 0 events remaining)

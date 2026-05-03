@@ -95,54 +95,7 @@ for i in "${!PREFILL_NODES[@]}"; do
     VLLM_PORT=$((VLLM_PREFILL_BASE_PORT + i))
     NODE_TCP_PORT=$((NODE_TCP_BASE_PORT + i))
 
-
-    log_info "Starting ${NODE_ID} on ${HOST} (vLLM:${VLLM_PORT}, TCP:${NODE_TCP_PORT})..."
-
-    # Build vLLM connector arguments based on USE_GPU flag
-    if [ "${USE_GPU:-true}" = "true" ]; then
-        # GPUDirect RDMA path: use our custom RDMAConnector
-        KV_CONNECTOR_ARGS="--kv-connector rdma_connector --kv-role send"
-        GPU_ARGS="--gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}"
-        MOONCAKE_ENV=""
-    else
-        # CPU/standard RDMA path: use MooncakeConnector (no GPU required)
-        NODE_IP=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" "hostname -I | awk '{print \$1}'" 2>&1) \
-            || { log_error "Failed to resolve IP for ${HOST}"; exit 1; }
-        if [ -z "$NODE_IP" ]; then
-            log_error "Could not determine IP address of ${HOST} — cannot generate Mooncake config"
-            exit 1
-        fi
-        MOONCAKE_CFG="/tmp/mooncake-${NODE_ID}.json"
-        ORCH_IP=$(get_full_hostname "$ORCHESTRATOR_NODE")
-        ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-            "sed 's/<node_ip>/${NODE_IP}/g; s/<orchestrator_ip>/${ORCH_IP}/g' \
-            ${REMOTE_DIR}/configs/mooncake.json > ${MOONCAKE_CFG}"
-        KV_CONNECTOR_ARGS="--kv-connector MooncakeConnector --kv-role send --device cpu"
-        GPU_ARGS=""
-        MOONCAKE_ENV="export MOONCAKE_CONFIG_PATH=${MOONCAKE_CFG} &&"
-    fi
-
-    # Start vLLM server (with disaggregated prefill mode)
-    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "cd ${REMOTE_DIR} && mkdir -p logs && \
-        source ${REMOTE_DIR}/venv/bin/activate && \
-        ${MOONCAKE_ENV} \
-        nohup python -m vllm.entrypoints.openai.api_server \
-            --model ${MODEL_NAME} \
-            --host 0.0.0.0 \
-            --port ${VLLM_PORT} \
-            --max-model-len ${MODEL_MAX_LEN} \
-            ${GPU_ARGS} \
-            --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
-            --disable-log-requests \
-            ${KV_CONNECTOR_ARGS} \
-            > logs/${NODE_ID}-vllm.log 2>&1 < /dev/null &"
-
-    # Give vLLM time to start
-    sleep 5
-
     log_info "Starting ${NODE_ID} on ${HOST} (vLLM will be started by C++ node)..."
-
 
     # Start C++ prefill node with node-specific config
     # The C++ node will automatically start vLLM based on config (using venv Python path in node.cpp)
@@ -179,54 +132,7 @@ for i in "${!DECODE_NODES[@]}"; do
     VLLM_PORT=$((VLLM_DECODE_BASE_PORT + i))
     NODE_TCP_PORT=$((NODE_TCP_BASE_PORT + 100 + i))
 
-
-    log_info "Starting ${NODE_ID} on ${HOST} (vLLM:${VLLM_PORT}, TCP:${NODE_TCP_PORT})..."
-
-    # Build vLLM connector arguments based on USE_GPU flag
-    if [ "${USE_GPU:-true}" = "true" ]; then
-        # GPUDirect RDMA path: use our custom RDMAConnector
-        KV_CONNECTOR_ARGS="--kv-connector rdma_connector --kv-role recv"
-        GPU_ARGS="--gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}"
-        MOONCAKE_ENV=""
-    else
-        # CPU/standard RDMA path: use MooncakeConnector (no GPU required)
-        NODE_IP=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" "hostname -I | awk '{print \$1}'" 2>&1) \
-            || { log_error "Failed to resolve IP for ${HOST}"; exit 1; }
-        if [ -z "$NODE_IP" ]; then
-            log_error "Could not determine IP address of ${HOST} — cannot generate Mooncake config"
-            exit 1
-        fi
-        MOONCAKE_CFG="/tmp/mooncake-${NODE_ID}.json"
-        ORCH_IP=$(get_full_hostname "$ORCHESTRATOR_NODE")
-        ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-            "sed 's/<node_ip>/${NODE_IP}/g; s/<orchestrator_ip>/${ORCH_IP}/g' \
-            ${REMOTE_DIR}/configs/mooncake.json > ${MOONCAKE_CFG}"
-        KV_CONNECTOR_ARGS="--kv-connector MooncakeConnector --kv-role recv --device cpu"
-        GPU_ARGS=""
-        MOONCAKE_ENV="export MOONCAKE_CONFIG_PATH=${MOONCAKE_CFG} &&"
-    fi
-
-    # Start vLLM server (with disaggregated decode mode)
-    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "cd ${REMOTE_DIR} && mkdir -p logs && \
-        source ${REMOTE_DIR}/venv/bin/activate && \
-        ${MOONCAKE_ENV} \
-        nohup python -m vllm.entrypoints.openai.api_server \
-            --model ${MODEL_NAME} \
-            --host 0.0.0.0 \
-            --port ${VLLM_PORT} \
-            --max-model-len ${MODEL_MAX_LEN} \
-            ${GPU_ARGS} \
-            --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} \
-            --disable-log-requests \
-            ${KV_CONNECTOR_ARGS} \
-            > logs/${NODE_ID}-vllm.log 2>&1 < /dev/null &"
-
-    # Give vLLM time to start
-    sleep 5
-
     log_info "Starting ${NODE_ID} on ${HOST} (vLLM will be started by C++ node)..."
-
 
     # Start C++ decode node with node-specific config
     # The C++ node will automatically start vLLM based on config (using venv Python path in node.cpp)
