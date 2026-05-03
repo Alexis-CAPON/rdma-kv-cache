@@ -38,7 +38,7 @@ struct RdmaConfig
 struct MemoryConfig
 {
     size_t kv_buffer_mb = 16384; // GPU memory buffer size in MB (total staging buffer)
-    size_t required_mb = 8 * 4096;
+    size_t required_mb = 0;      // Minimum required buffer (computed in Config::fromFile)
     size_t layer_size_mb = 128;      // Per-layer KV cache size in MB (128MB for typical LLMs)
     int num_kv_chunks = 16;          // Number of chunks for pipelined transfer
     size_t chunk_size_mb = 64;       // Size of each chunk in MB (64-128 recommended)
