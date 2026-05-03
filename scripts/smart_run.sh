@@ -14,14 +14,29 @@ source "${SCRIPT_DIR}/deploy_config.sh"
 # Configuration
 # ============================================
 
-# Default: 1 orchestrator, 2 prefill, 2 decode
-NUM_PREFILL_NODES=${1:-2}
-NUM_DECODE_NODES=${2:-2}
+# Calculate available nodes (excluding orchestrator)
+AVAILABLE_NODES=$((${#CLOUDLAB_NODES[@]} - 1))
+
+# If no arguments provided, auto-distribute available nodes
+if [ -z "$1" ] && [ -z "$2" ]; then
+    # Auto mode: split available nodes evenly between prefill and decode
+    NUM_PREFILL_NODES=$((AVAILABLE_NODES / 2))
+    NUM_DECODE_NODES=$((AVAILABLE_NODES - NUM_PREFILL_NODES))
+
+    log_info "Auto-mode: Using all ${#CLOUDLAB_NODES[@]} nodes (1 orchestrator, ${NUM_PREFILL_NODES} prefill, ${NUM_DECODE_NODES} decode)"
+else
+    # Manual mode: use provided arguments (default to 1 each if not specified)
+    NUM_PREFILL_NODES=${1:-1}
+    NUM_DECODE_NODES=${2:-1}
+fi
 
 # Validate we have enough nodes
 TOTAL_NODES=$((1 + NUM_PREFILL_NODES + NUM_DECODE_NODES))
 if [ $TOTAL_NODES -gt ${#CLOUDLAB_NODES[@]} ]; then
-    log_error "Not enough CloudLab nodes. Need $TOTAL_NODES, have ${#CLOUDLAB_NODES[@]}"
+    log_error "Not enough CloudLab nodes. Need $TOTAL_NODES (1 orchestrator + $NUM_PREFILL_NODES prefill + $NUM_DECODE_NODES decode), have ${#CLOUDLAB_NODES[@]}"
+    log_error "Available nodes after orchestrator: $AVAILABLE_NODES"
+    log_error "Usage: $0 [num_prefill] [num_decode]"
+    log_error "Example: $0 1 1  # Use 1 prefill and 1 decode node"
     exit 1
 fi
 
@@ -49,7 +64,7 @@ ORCHESTRATOR_HOST=$(get_full_hostname "$ORCHESTRATOR_NODE")
 
 ssh "${SSH_OPTS[@]}" "${USERNAME}@${ORCHESTRATOR_HOST}" \
     "cd ${REMOTE_DIR} && mkdir -p logs && \
-    nohup ./build/bin/orchestrator --config configs/orchestrator.yaml \
+    nohup ./build/cpp/orchestrator --config configs/orchestrator.yaml \
     > logs/orchestrator.log 2>&1 < /dev/null &"
 
 sleep 2
@@ -109,6 +124,7 @@ for i in "${!PREFILL_NODES[@]}"; do
     # Start vLLM server (with disaggregated prefill mode)
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && mkdir -p logs && \
+        source ${REMOTE_DIR}/venv/bin/activate && \
         export PYTHONPATH=${VLLM_PATH}:\${PYTHONPATH} && \
         ${MOONCAKE_ENV} \
         nohup python -m vllm.entrypoints.openai.api_server \
@@ -128,7 +144,7 @@ for i in "${!PREFILL_NODES[@]}"; do
     # Start C++ prefill node with node-specific config
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && \
-        nohup ./build/bin/prefill_node --config configs/${NODE_ID}.yaml \
+        nohup ./build/cpp/prefill_node --config configs/${NODE_ID}.yaml \
             > logs/${NODE_ID}-node.log 2>&1 < /dev/null &"
 
     sleep 2
@@ -190,6 +206,7 @@ for i in "${!DECODE_NODES[@]}"; do
     # Start vLLM server (with disaggregated decode mode)
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && mkdir -p logs && \
+        source ${REMOTE_DIR}/venv/bin/activate && \
         export PYTHONPATH=${VLLM_PATH}:\${PYTHONPATH} && \
         ${MOONCAKE_ENV} \
         nohup python -m vllm.entrypoints.openai.api_server \
@@ -209,7 +226,7 @@ for i in "${!DECODE_NODES[@]}"; do
     # Start C++ decode node with node-specific config
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && \
-        nohup ./build/bin/decode_node --config configs/${NODE_ID}.yaml \
+        nohup ./build/cpp/decode_node --config configs/${NODE_ID}.yaml \
             > logs/${NODE_ID}-node.log 2>&1 < /dev/null &"
 
     sleep 2

@@ -30,6 +30,9 @@ add_library(common STATIC
     common/utils.cpp
 )
 
+# Enable Position Independent Code for use in Python bindings
+set_target_properties(common PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_include_directories(common PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/cpp
@@ -48,6 +51,9 @@ add_library(network STATIC
     network/tcp_server.cpp
     network/http_client.cpp
 )
+
+# Enable Position Independent Code for use in Python bindings
+set_target_properties(network PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_link_libraries(network
     PUBLIC
@@ -68,6 +74,9 @@ add_library(rdma_engine STATIC
     rdma/device_probe.cpp
     rdma/gpudirect_rdma.cpp
 )
+
+# Enable Position Independent Code for use in Python bindings
+set_target_properties(rdma_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(ENABLE_GPU_DIRECT)
     target_compile_definitions(rdma_engine PUBLIC ENABLE_GPU_DIRECT)
@@ -122,11 +131,15 @@ add_library(nodes STATIC
     bindings/node_accessor.cpp
 )
 
+# Enable Position Independent Code for use in Python bindings
+set_target_properties(nodes PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_link_libraries(nodes
     PUBLIC
         common
         network
         rdma_engine
+        nlohmann_json::nlohmann_json
         # vllm_integration  # commented out - optional library
 )
 
