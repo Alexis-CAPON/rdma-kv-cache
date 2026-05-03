@@ -64,8 +64,8 @@ ORCHESTRATOR_HOST=$(get_full_hostname "$ORCHESTRATOR_NODE")
 
 ssh "${SSH_OPTS[@]}" "${USERNAME}@${ORCHESTRATOR_HOST}" \
     "cd ${REMOTE_DIR} && mkdir -p logs && \
-    nohup ./build/cpp/orchestrator --config configs/orchestrator.yaml \
-    > logs/orchestrator.log 2>&1 < /dev/null &"
+    bash -c 'nohup ./build/cpp/orchestrator --config configs/orchestrator.yaml \
+    > logs/orchestrator.log 2>&1 < /dev/null & disown'"
 
 sleep 2
 
@@ -94,6 +94,7 @@ for i in "${!PREFILL_NODES[@]}"; do
     NODE_ID="prefill-$(printf '%02d' $i)"
     VLLM_PORT=$((VLLM_PREFILL_BASE_PORT + i))
     NODE_TCP_PORT=$((NODE_TCP_BASE_PORT + i))
+
 
     log_info "Starting ${NODE_ID} on ${HOST} (vLLM:${VLLM_PORT}, TCP:${NODE_TCP_PORT})..."
 
@@ -140,24 +141,26 @@ for i in "${!PREFILL_NODES[@]}"; do
     # Give vLLM time to start
     sleep 5
 
+    log_info "Starting ${NODE_ID} on ${HOST} (vLLM will be started by C++ node)..."
+
+
     # Start C++ prefill node with node-specific config
+    # The C++ node will automatically start vLLM based on config (using venv Python path in node.cpp)
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "cd ${REMOTE_DIR} && \
-        nohup ./build/cpp/prefill_node --config configs/${NODE_ID}.yaml \
-            > logs/${NODE_ID}-node.log 2>&1 < /dev/null &"
+        "cd ${REMOTE_DIR} && mkdir -p logs && \
+        bash -c 'nohup ./build/cpp/prefill_node --config configs/${NODE_ID}.yaml \
+            > logs/${NODE_ID}-node.log 2>&1 < /dev/null & disown'"
 
-    sleep 2
+    sleep 3
 
-    # Verify both processes started
-    VLLM_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "pgrep -f 'vllm.*--port ${VLLM_PORT}' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+    # Verify C++ node started
     NODE_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "pgrep -f 'prefill_node --config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
 
-    if [ "$VLLM_RUNNING" == "yes" ] && [ "$NODE_RUNNING" == "yes" ]; then
-        log_success "${NODE_ID} started (vLLM + C++ node)"
+    if [ "$NODE_RUNNING" == "yes" ]; then
+        log_success "${NODE_ID} C++ node started (will spawn vLLM)"
     else
-        log_error "${NODE_ID} failed to start (vLLM:${VLLM_RUNNING}, Node:${NODE_RUNNING})"
+        log_error "${NODE_ID} C++ node failed to start"
     fi
 done
 
@@ -175,6 +178,7 @@ for i in "${!DECODE_NODES[@]}"; do
     NODE_ID="decode-$(printf '%02d' $i)"
     VLLM_PORT=$((VLLM_DECODE_BASE_PORT + i))
     NODE_TCP_PORT=$((NODE_TCP_BASE_PORT + 100 + i))
+
 
     log_info "Starting ${NODE_ID} on ${HOST} (vLLM:${VLLM_PORT}, TCP:${NODE_TCP_PORT})..."
 
@@ -221,24 +225,26 @@ for i in "${!DECODE_NODES[@]}"; do
     # Give vLLM time to start
     sleep 5
 
+    log_info "Starting ${NODE_ID} on ${HOST} (vLLM will be started by C++ node)..."
+
+
     # Start C++ decode node with node-specific config
+    # The C++ node will automatically start vLLM based on config (using venv Python path in node.cpp)
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "cd ${REMOTE_DIR} && \
-        nohup ./build/cpp/decode_node --config configs/${NODE_ID}.yaml \
-            > logs/${NODE_ID}-node.log 2>&1 < /dev/null &"
+        "cd ${REMOTE_DIR} && mkdir -p logs && \
+        bash -c 'nohup ./build/cpp/decode_node --config configs/${NODE_ID}.yaml \
+            > logs/${NODE_ID}-node.log 2>&1 < /dev/null & disown'"
 
-    sleep 2
+    sleep 3
 
-    # Verify both processes started
-    VLLM_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "pgrep -f 'vllm.*--port ${VLLM_PORT}' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
+    # Verify C++ node started
     NODE_RUNNING=$(ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "pgrep -f 'decode_node --config' > /dev/null && echo 'yes' || echo 'no'" 2>/dev/null)
 
-    if [ "$VLLM_RUNNING" == "yes" ] && [ "$NODE_RUNNING" == "yes" ]; then
-        log_success "${NODE_ID} started (vLLM + C++ node)"
+    if [ "$NODE_RUNNING" == "yes" ]; then
+        log_success "${NODE_ID} C++ node started (will spawn vLLM)"
     else
-        log_error "${NODE_ID} failed to start (vLLM:${VLLM_RUNNING}, Node:${NODE_RUNNING})"
+        log_error "${NODE_ID} C++ node failed to start"
     fi
 done
 

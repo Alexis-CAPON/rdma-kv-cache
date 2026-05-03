@@ -1,0 +1,114 @@
+tail: /users/Alexis/rdma-kv-cache/logs/prefill-00-node.log: file truncated
+[2026-05-03 17:06:32] [INFO] Using config file: configs/prefill-00.yaml
+[2026-05-03 17:06:32] [INFO] EpollWorkerBase initialized with server TCP server on port -1
+[2026-05-03 17:06:32] [INFO] EpollWorker initialized with server TCP server on port -1
+[2026-05-03 17:06:32] [INFO] WorkerPoolBase initialized with 4 Worker instances
+[2026-05-03 17:06:32] [INFO] WorkerPoolNode initializing with 4 workers
+[2026-05-03 17:06:32] [INFO] Worker Base0 initialized for Prefill/Decode node
+[2026-05-03 17:06:32] [INFO] WorkerNode 0 initialized for Prefill/Decode node
+[2026-05-03 17:06:32] [INFO] Worker Base1 initialized for Prefill/Decode node
+[2026-05-03 17:06:32] [INFO] WorkerNode 1 initialized for Prefill/Decode node
+[2026-05-03 17:06:32] [INFO] Worker Base2 initialized for Prefill/Decode node
+[2026-05-03 17:06:32] [INFO] WorkerNode 2 initialized for Prefill/Decode node
+[2026-05-03 17:06:32] [INFO] Worker Base3 initialized for Prefill/Decode node
+[2026-05-03 17:06:32] [INFO] WorkerNode 3 initialized for Prefill/Decode node
+[2026-05-03 17:06:32] [INFO] WorkerPoolNode initialized with 4 WorkerNode instances
+[2026-05-03 17:06:32] [INFO] RequestTrackerLayer: Initialized with buffer_size=16384MB, max_requests=4, num_layers=32, layer_size=128MB
+[2026-05-03 17:06:32] [INFO] Initializing Node prefill : clgpu017.clemson.cloudlab.us:6041 (server)
+[2026-05-03 17:06:32] [INFO] Starting Node...
+[2026-05-03 17:06:32] [INFO] Starting TCP Server for node connections on port 6041
+[2026-05-03 17:06:32] [INFO] EpollWorker: created epoll fd=4
+[2026-05-03 17:06:32] [INFO] EpollWorker: added server listen socket fd=3
+[2026-05-03 17:06:32] [INFO] EpollWorker started
+[2026-05-03 17:06:32] [INFO] EpollWorker started
+[2026-05-03 17:06:32] [INFO] Starting WorkerPoolNode with 4 threads
+[2026-05-03 17:06:32] [INFO] EpollWorker: entering event loop
+[2026-05-03 17:06:32] [INFO] Worker thread 0 started
+[2026-05-03 17:06:32] [INFO] Worker thread 1 started
+[2026-05-03 17:06:32] [INFO] Worker thread 2 started
+[2026-05-03 17:06:32] [INFO] WorkerPoolNode started successfully
+[2026-05-03 17:06:32] [INFO] WorkerPool started with 4 workers
+[2026-05-03 17:06:32] [INFO] Initializing RDMA GPUDirect...
+[2026-05-03 17:06:32] [INFO] RDMAEngine: Initializing GPUDirect RDMA
+[2026-05-03 17:06:32] [INFO] RDMAEngine: Probing GPU and IB devices
+[2026-05-03 17:06:32] [INFO] Worker thread 3 started
+[2026-05-03 17:06:33] [INFO] [GPU] Total CUDA devices visible: 2
+[2026-05-03 17:06:33] [DEBUG] [GPU] [0] Tesla V100S-PCIE-32GB  cc=7.0  mem=32494 MB  PCIe=0000:21:00.0  NUMA=0
+[2026-05-03 17:06:33] [DEBUG] [GPU] [1] Tesla V100S-PCIE-32GB  cc=7.0  mem=32494 MB  PCIe=0000:e2:00.0  NUMA=1
+[2026-05-03 17:06:33] [INFO] [GPU] P2P enabled: GPU0 → GPU1
+[2026-05-03 17:06:33] [INFO] [GPU] P2P enabled: GPU1 → GPU0
+[2026-05-03 17:06:33] [INFO] RDMAEngine: Selected GPU0 (Tesla V100S-PCIE-32GB) NUMA=0
+[2026-05-03 17:06:33] [DEBUG] [IB] roceo33 port 1  state=PORT_ACTIVE  speed=25 Gb/s  LID=0x0  PCIe=0000:63:00.0  NUMA=0
+[2026-05-03 17:06:33] [DEBUG] [IB] roceo34 port 1  state=PORT_DOWN  speed=40 Gb/s  LID=0x0  PCIe=0000:63:00.1  NUMA=0
+[2026-05-03 17:06:33] [WARNING] [IB] roceo34 port 1 is NOT active (PORT_DOWN) — skipping
+[2026-05-03 17:06:33] [DEBUG] [IB] rocep129s0f0 port 1  state=PORT_ACTIVE  speed=40 Gb/s  LID=0x0  PCIe=0000:81:00.0  NUMA=1
+[2026-05-03 17:06:33] [DEBUG] [IB] rocep129s0f1 port 1  state=PORT_ACTIVE  speed=40 Gb/s  LID=0x0  PCIe=0000:81:00.1  NUMA=1
+[2026-05-03 17:06:33] [DEBUG] [IB] roceo33 port 1 GID[0]=fe80:0000:0000:0000:1e34:daff:fe72:f616
+[2026-05-03 17:06:33] [DEBUG] [IB] rocep129s0f0 port 1 GID[0]=fe80:0000:0000:0000:0e42:a1ff:fea4:8a4c
+[2026-05-03 17:06:33] [DEBUG] [IB] rocep129s0f1 port 1 GID[0]=fe80:0000:0000:0000:0e42:a1ff:fea4:8a4d
+[2026-05-03 17:06:33] [INFO] RDMAEngine: Selected IB device roceo33 port 1 (25 Gb/s) NUMA=0
+[2026-05-03 17:06:33] [INFO] RDMAEngine: Binding CUDA device GPU0
+[2026-05-03 17:06:33] [INFO] RDMAEngine: Opening IB device roceo33
+[IB] Opened roceo33  port=1  LID=0x0  max_mr=16777216  max_qp=131072
+[2026-05-03 17:06:33] [INFO] RDMAEngine: Allocating 16384 MB GPU memory
+[MR] WARNING: IBV_ACCESS_RELAXED_ORDERING not available in this OFED version — skipping
+[2026-05-03 17:06:45] [DEBUG] [MR] GPU0  size=16384 MB  lkey=0x185dde  rkey=0x185dde  d_ptr=0x7fc304000000
+[2026-05-03 17:06:45] [DEBUG] RDMAEngine: GPU memory registered successfully rkey=0x1596894 addr=0x140475562459136
+[2026-05-03 17:06:45] [INFO] RDMAEngine: Creating CQs
+[2026-05-03 17:06:45] [INFO] RDMAEngine: CQs created successfully
+[2026-05-03 17:06:45] [DEBUG] RDMAEngine: Creating QP for peer 4015515319022553377
+[2026-05-03 17:06:45] [DEBUG] RDMAEngine: Created QP for peer 4015515319022553377 QPN=136
+[2026-05-03 17:06:45] [INFO] RDMAEngine: Created QP for peer 4015515319022553377 (QPN=136)
+[2026-05-03 17:06:45] [INFO] RDMAEngine: Initialization complete
+[2026-05-03 17:06:45] [INFO] RDMA GPUDirect initialized successfully
+[2026-05-03 17:06:45] [INFO] Connecting to orchestrator...
+[2026-05-03 17:06:45] [DEBUG] Set TCP_NODELAY=1 on socket 75
+[2026-05-03 17:06:45] [DEBUG] Enabled TCP keepalive on socket 75 (idle=60s, interval=10s, count=3)
+[2026-05-03 17:06:45] [DEBUG] Set send buffer size to 262144 bytes on socket 75
+[2026-05-03 17:06:45] [DEBUG] Set recv buffer size to 262144 bytes on socket 75
+[2026-05-03 17:06:45] [DEBUG] Successfully optimized TCP socket 75
+[2026-05-03 17:06:45] [INFO] EpollWorker: connected to orchestrator clgpu013.clemson.cloudlab.us:6011 (fd=75)
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: added connection fd=75 type=3 (level-triggered)
+[2026-05-03 17:06:45] [DEBUG] EpollWorker::enqueue_response: queued 367 bytes for client_fd=75
+[2026-05-03 17:06:45] [INFO] EpollWorker: sent node info to orchestrator
+[2026-05-03 17:06:45] [INFO] ========================================
+[2026-05-03 17:06:45] [INFO] Node ONLINE (prefill)
+[2026-05-03 17:06:45] [INFO] State: WAITING_FOR_ORCHESTRATOR_BROADCAST
+[2026-05-03 17:06:45] [INFO] Server port: 6041
+[2026-05-03 17:06:45] [INFO] Backend: GPUDirect RDMA (RDMAConnector)
+[2026-05-03 17:06:45] [INFO] GPU: Tesla V100S-PCIE-32GB (GPU0)
+[2026-05-03 17:06:45] [INFO] IB Device: roceo33 port 1
+[2026-05-03 17:06:45] [INFO] ========================================
+[2026-05-03 17:06:45] [INFO] Prefill node is running. Press Ctrl+C to stop.
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: event on fd=75 events=0x4
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: sent 367 bytes to fd=75
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: sent all 367 bytes to fd=75
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: event on fd=75 events=0x1
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: received 686 bytes from fd=75 (buffer now has 686 bytes)
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: read header on fd=75, expecting payload of 682 bytes
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: complete message received on fd=75, 682 bytes
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: waiting for header on fd=75 (have 0/4 bytes)
+[2026-05-03 17:06:49] [DEBUG] WorkerNode 0 processing event from fd=75
+[2026-05-03 17:06:49] [DEBUG] Worker 0 handling BROADCAST_MEMBER_INFO for epoch=1777849609713697345
+[2026-05-03 17:06:49] [INFO] Filled remote QP info for peer 4015515319022553377
+[2026-05-03 17:06:49] [DEBUG] Validated remote QP info for peer 4015515319022553377: remote_qp_num=135, remote_lid=0
+[2026-05-03 17:06:49] [INFO] RDMAEngine: Connecting all QPs to peers
+[2026-05-03 17:06:49] [DEBUG] RDMAEngine: Connecting QP to peer 4015515319022553377
+[2026-05-03 17:06:49] [INFO] Auto-discovered MTU: 1024 bytes (optimal for this fabric)
+[2026-05-03 17:06:49] [DEBUG] RDMAEngine: QP INIT→RTR for peer 4015515319022553377
+[2026-05-03 17:06:49] [DEBUG] RDMAEngine: QP RTR→RTS for peer 4015515319022553377
+[2026-05-03 17:06:49] [INFO] RDMAEngine: QP connected to peer 4015515319022553377 (local_QPN=136 remote_QPN=135)
+[2026-05-03 17:06:49] [INFO] RDMAEngine: Connected QP to peer 4015515319022553377
+[2026-05-03 17:06:49] [INFO] RDMAEngine: All QPs connected successfully
+[2026-05-03 17:06:49] [INFO] Successfully connected QP with peers
+[2026-05-03 17:06:49] [INFO] vLLM server started with PID 113870 (connector=rdma_connector)
+/usr/bin/python: Error while finding module specification for 'vllm.entrypoints.openai.api_server' (ModuleNotFoundError: No module named 'vllm.entrypoints')
+[2026-05-03 17:06:54] [DEBUG] Worker 0 sending server response to fd=75 type=12
+[2026-05-03 17:06:54] [DEBUG] EpollWorker::enqueue_response: queued 228 bytes for client_fd=75
+[2026-05-03 17:06:54] [DEBUG] Sent RDMA_READY to orchestrator for node_id=12812138112258983823
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: event on fd=75 events=0x4
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: sent 228 bytes to fd=75
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: sent all 228 bytes to fd=75

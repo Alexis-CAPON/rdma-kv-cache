@@ -229,17 +229,18 @@ bool Node::start_vllm_server()
 
     std::string cmd;
 
+    // Construct venv activation and Python command
+    std::string venv_path = std::string(getenv("HOME")) + "/rdma-kv-cache/venv";
+    std::string activate_and_run = "source " + venv_path + "/bin/activate && ";
+
     if (config_.use_gpu)
     {
         // GPUDirect RDMA path: use our custom RDMAConnector
-        cmd = "python -m vllm.entrypoints.openai.api_server "
-              "--model " +
-              config_.model_name + " "
-                                   "--port " +
-              std::to_string(config_.vllm_port) + " "
-                                                  "--kv-connector rdma_connector "
-                                                  "--kv-role " +
-              kv_role;
+        cmd = activate_and_run + "python -m vllm.entrypoints.openai.api_server "
+              "--model '" + config_.model_name + "' "
+              "--port " + std::to_string(config_.vllm_port) + " "
+              "--kv-connector rdma_connector "
+              "--kv-role " + kv_role;
     }
     else
     {
@@ -282,23 +283,21 @@ bool Node::start_vllm_server()
             }
         }
 
-        cmd = "MOONCAKE_CONFIG_PATH=" + mooncake_cfg_path + " "
-                                                            "python -m vllm.entrypoints.openai.api_server "
-                                                            "--model " +
-              config_.model_name + " "
-                                   "--port " +
-              std::to_string(config_.vllm_port) + " "
-                                                  "--kv-connector MooncakeConnector "
-                                                  "--kv-role " +
-              kv_role + " "
-                        "--device cpu";
+        cmd = activate_and_run + "MOONCAKE_CONFIG_PATH=" + mooncake_cfg_path + " "
+              "python -m vllm.entrypoints.openai.api_server "
+              "--model '" + config_.model_name + "' "
+              "--port " + std::to_string(config_.vllm_port) + " "
+              "--kv-connector MooncakeConnector "
+              "--kv-role " + kv_role + " "
+              "--device cpu";
     }
 
     vllm_pid = fork();
     if (vllm_pid == 0)
     {
         // Child process - start VLLM server
-        execl("/bin/sh", "sh", "-c", cmd.c_str(), (char *)NULL);
+        // Use bash explicitly for 'source' command support
+        execl("/bin/bash", "bash", "-c", cmd.c_str(), (char *)NULL);
         // If execl returns, it means it failed
         Logger::error("Failed to start VLLM server with command: " + cmd);
         exit(1);

@@ -1,0 +1,117 @@
+tail: /users/Alexis/rdma-kv-cache/logs/orchestrator.log: file truncated
+[2026-05-03 17:06:29] [INFO] Using config file: configs/orchestrator.yaml
+[2026-05-03 17:06:29] [INFO] EpollWorkerBase initialized with server TCP server on port -1
+[2026-05-03 17:06:29] [INFO] EpollWorkerOrchestrator initialized with client TCP server on port -1 and server TCP server on port -1
+[2026-05-03 17:06:29] [INFO] WorkerPoolBase initialized with 4 Worker instances
+[2026-05-03 17:06:29] [INFO] WorkerPool initializing with 4 workers
+[2026-05-03 17:06:29] [INFO] Worker Base0 initialized for Prefill/Decode node
+[2026-05-03 17:06:29] [INFO] Worker 0 initialized for Orchestrator node
+[2026-05-03 17:06:29] [INFO] Worker Base1 initialized for Prefill/Decode node
+[2026-05-03 17:06:29] [INFO] Worker 1 initialized for Orchestrator node
+[2026-05-03 17:06:29] [INFO] Worker Base2 initialized for Prefill/Decode node
+[2026-05-03 17:06:29] [INFO] Worker 2 initialized for Orchestrator node
+[2026-05-03 17:06:29] [INFO] Worker Base3 initialized for Prefill/Decode node
+[2026-05-03 17:06:29] [INFO] Worker 3 initialized for Orchestrator node
+[2026-05-03 17:06:29] [INFO] WorkerPoolOrchestrator initialized with 4 WorkerOrchestrator instances
+[2026-05-03 17:06:29] [INFO] RequestRouter: Initialized with policy=1, max_slots_per_node=8, request_size=4096MB, num_layers=32
+[2026-05-03 17:06:29] [INFO] RdmaExchangeTracker: Expecting 1 prefill nodes, 1 decode nodes
+[2026-05-03 17:06:29] [INFO] Initializing Orchestrator: clgpu013.clemson.cloudlab.us:6010 (client), :6011 (server)
+[2026-05-03 17:06:29] [INFO] Expected cluster: 1 prefill nodes, 1 decode nodes
+[2026-05-03 17:06:29] [INFO] Starting Orchestrator...
+[2026-05-03 17:06:29] [INFO] Starting TCP Server for client requests on port 6010
+[2026-05-03 17:06:29] [INFO] Starting TCP Server for node connections on port 6011
+[2026-05-03 17:06:29] [INFO] EpollWorker: created epoll fd=5
+[2026-05-03 17:06:29] [INFO] EpollWorker: added client listen socket fd=3
+[2026-05-03 17:06:29] [INFO] EpollWorker: added server listen socket fd=4
+[2026-05-03 17:06:29] [INFO] EpollWorker started
+[2026-05-03 17:06:29] [INFO] EpollWorker started
+[2026-05-03 17:06:29] [INFO] Starting WorkerPoolOrchestrator with 4 threads
+[2026-05-03 17:06:29] [INFO] EpollWorker: entering event loop
+[2026-05-03 17:06:29] [INFO] Worker thread 0 started
+[2026-05-03 17:06:29] [INFO] Worker thread 1 started
+[2026-05-03 17:06:29] [INFO] WorkerPoolOrchestrator started successfully
+[2026-05-03 17:06:29] [INFO] WorkerPool started with 4 workers
+[2026-05-03 17:06:29] [INFO] ========================================
+[2026-05-03 17:06:29] [INFO] Orchestrator ONLINE
+[2026-05-03 17:06:29] [INFO] State: WAITING_FOR_NODES
+[2026-05-03 17:06:29] [INFO] Client port: 6010
+[2026-05-03 17:06:29] [INFO] Server port: 6011
+[2026-05-03 17:06:29] [INFO] ========================================
+[2026-05-03 17:06:29] [INFO] Orchestrator engine is running. Press Ctrl+C to stop.
+[2026-05-03 17:06:29] [INFO] Worker thread 3 started
+[2026-05-03 17:06:29] [INFO] Worker thread 2 started
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: event on fd=4 events=0x1
+[2026-05-03 17:06:45] [DEBUG] Set TCP_NODELAY=1 on socket 6
+[2026-05-03 17:06:45] [DEBUG] Enabled TCP keepalive on socket 6 (idle=60s, interval=10s, count=3)
+[2026-05-03 17:06:45] [DEBUG] Set send buffer size to 262144 bytes on socket 6
+[2026-05-03 17:06:45] [DEBUG] Set recv buffer size to 262144 bytes on socket 6
+[2026-05-03 17:06:45] [DEBUG] Successfully optimized TCP socket 6
+[2026-05-03 17:06:45] [INFO] EpollWorker: accepted new server connection fd=6
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: added connection fd=6 type=3 (level-triggered)
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: event on fd=6 events=0x1
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: received 367 bytes from fd=6 (buffer now has 367 bytes)
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: read header on fd=6, expecting payload of 363 bytes
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: complete message received on fd=6, 363 bytes
+[2026-05-03 17:06:45] [DEBUG] EpollWorker: waiting for header on fd=6 (have 0/4 bytes)
+[2026-05-03 17:06:45] [DEBUG] Worker 0 processing event from fd=6
+[2026-05-03 17:06:45] [DEBUG] Worker 0 handling RDMA_PROCESS_REGISTRATION from fd=6 node_id=12812138112258983823
+[2026-05-03 17:06:45] [INFO] NodeRegistry: Added node 12812138112258983823 (role: PREFILL, qmaps: 1)
+[2026-05-03 17:06:45] [INFO] RdmaExchangeTracker: Registered prefill node 12812138112258983823 (1/1)
+[2026-05-03 17:06:45] [INFO] Received RDMA registration from node_id=12812138112258983823 (1/2 registered)
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: event on fd=4 events=0x1
+[2026-05-03 17:06:49] [DEBUG] Set TCP_NODELAY=1 on socket 7
+[2026-05-03 17:06:49] [DEBUG] Enabled TCP keepalive on socket 7 (idle=60s, interval=10s, count=3)
+[2026-05-03 17:06:49] [DEBUG] Set send buffer size to 262144 bytes on socket 7
+[2026-05-03 17:06:49] [DEBUG] Set recv buffer size to 262144 bytes on socket 7
+[2026-05-03 17:06:49] [DEBUG] Successfully optimized TCP socket 7
+[2026-05-03 17:06:49] [INFO] EpollWorker: accepted new server connection fd=7
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: added connection fd=7 type=3 (level-triggered)
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: event on fd=7 events=0x1
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: received 366 bytes from fd=7 (buffer now has 366 bytes)
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: read header on fd=7, expecting payload of 362 bytes
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: complete message received on fd=7, 362 bytes
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: waiting for header on fd=7 (have 0/4 bytes)
+[2026-05-03 17:06:49] [DEBUG] Worker 1 processing event from fd=7
+[2026-05-03 17:06:49] [DEBUG] Worker 1 handling RDMA_PROCESS_REGISTRATION from fd=7 node_id=4015515319022553377
+[2026-05-03 17:06:49] [INFO] NodeRegistry: Added node 4015515319022553377 (role: DECODE, qmaps: 1)
+[2026-05-03 17:06:49] [INFO] RdmaExchangeTracker: Registered decode node 4015515319022553377 (1/1)
+[2026-05-03 17:06:49] [INFO] RdmaExchangeTracker: All nodes registered!
+[2026-05-03 17:06:49] [INFO] All expected nodes have completed RDMA registration (2/2). Broadcasting member info...
+[2026-05-03 17:06:49] [DEBUG] Worker 1 sending server response to fd=7 type=7
+[2026-05-03 17:06:49] [DEBUG] EpollWorker::enqueue_response: queued 686 bytes for client_fd=7
+[2026-05-03 17:06:49] [DEBUG] Sent BROADCAST_MEMBER_INFO to node_id=4015515319022553377 at :0
+[2026-05-03 17:06:49] [DEBUG] Worker 1 sending server response to fd=6 type=7
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: event on fd=7 events=0x4
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: sent 686 bytes to fd=7
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: sent all 686 bytes to fd=7
+[2026-05-03 17:06:49] [DEBUG] EpollWorker::enqueue_response: queued 686 bytes for client_fd=6
+[2026-05-03 17:06:49] [DEBUG] Sent BROADCAST_MEMBER_INFO to node_id=12812138112258983823 at :0
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: event on fd=6 events=0x4
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: sent 686 bytes to fd=6
+[2026-05-03 17:06:49] [DEBUG] EpollWorker: sent all 686 bytes to fd=6
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: event on fd=6 events=0x1
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: received 228 bytes from fd=6 (buffer now has 228 bytes)
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: read header on fd=6, expecting payload of 224 bytes
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: complete message received on fd=6, 224 bytes
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: waiting for header on fd=6 (have 0/4 bytes)
+[2026-05-03 17:06:54] [DEBUG] Worker 3 processing event from fd=6
+[2026-05-03 17:06:54] [DEBUG] Worker 3 handling RDMA_READY from fd=6 node_id=12812138112258983823
+[2026-05-03 17:06:54] [INFO] RdmaExchangeTracker: Node 12812138112258983823 is RDMA ready (1/2)
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: epoll_wait returned 1 events
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: event on fd=7 events=0x1
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: received 227 bytes from fd=7 (buffer now has 227 bytes)
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: read header on fd=7, expecting payload of 223 bytes
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: complete message received on fd=7, 223 bytes
+[2026-05-03 17:06:54] [DEBUG] EpollWorker: waiting for header on fd=7 (have 0/4 bytes)
+[2026-05-03 17:06:54] [DEBUG] Worker 2 processing event from fd=7
+[2026-05-03 17:06:54] [DEBUG] Worker 2 handling RDMA_READY from fd=7 node_id=4015515319022553377
+[2026-05-03 17:06:54] [INFO] RdmaExchangeTracker: Node 4015515319022553377 is RDMA ready (2/2)
+[2026-05-03 17:06:54] [INFO] RdmaExchangeTracker: All nodes RDMA ready! Cluster operational.
+[2026-05-03 17:06:54] [INFO] All nodes are ready for RDMA communication. Orchestrator can now start processing client requests and assigning them to prefill nodes.
