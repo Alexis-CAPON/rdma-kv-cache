@@ -12,9 +12,10 @@
 #include "cpp/nodes/epoll_worker_node.h"
 #include "cpp/rdma/rdma_engine.h"
 #include "cpp/nodes/request_tracker_layer.h"
-#include "cpp/nodes/node.h"
 #include "cpp/nodes/worker_base.h"
 #include "cpp/nodes/worker_pool_base.h"
+
+class Node; // forward declaration to avoid circular include
 
 class WorkerNode : public WorkerBase
 {

@@ -96,7 +96,7 @@ public:
     // Accessors (for debugging/monitoring)
     // ========================================
 
-    uint32_t get_id() const { return config_.node_id; }
+    const std::string &get_id() const { return config_.node_id; }
     uint32_t get_client_port() const { return config_.client_socket_port; }
     uint32_t get_server_port() const { return config_.server_socket_port; }
     std::string get_hostname() const { return config_.hostname; }

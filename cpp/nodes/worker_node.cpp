@@ -1,6 +1,7 @@
 #include "cpp/nodes/worker_node.h"
 #include "cpp/common/logger.h"
 #include "cpp/nodes/node.h"
+#include "cpp/network/http_client.h"
 #include <chrono>
 #include <algorithm>
 #include <cstring>
@@ -431,6 +432,8 @@ void WorkerNode::handle_kv_transfer_complete(int /*unused_fd*/, Message *msg)
 
 void WorkerNode::handle_prepare_decode_slot(int server_fd, Message *msg)
 {
+    const std::string &request_id = msg->request_info.request_id;
+    int slot_id = msg->request_info.slot_id;
 
     Logger::debug("Handling PREPARE_DECODE_SLOT for request " + request_id +
                   " slot_id=" + std::to_string(slot_id));
@@ -441,7 +444,7 @@ void WorkerNode::handle_prepare_decode_slot(int server_fd, Message *msg)
         msg->request_info.slot_id,
         config_.num_layers);
 
-    request_tracker_layer_.update_state(request_id, State::WAITING_FOR_KV);
+    request_tracker_layer_.update_state(request_id, RequestTrackerLayer::State::WAITING_FOR_KV);
 
     // Also store prompt + max_tokens into the tracker entry so handle_kv_transfer_complete has them
 }

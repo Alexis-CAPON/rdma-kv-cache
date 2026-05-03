@@ -116,7 +116,7 @@ public:
         // Create request message
         Message request;
         request.type = MessageType::CLIENT_REQUEST;
-        request.source_node_id = 0; // Client has no node ID
+        request.source_node_id = ""; // Client has no node ID
         request.request_info.request_id = generate_request_id();
         request.request_info.prompt = prompt;
         request.request_info.max_tokens = max_tokens;
@@ -127,7 +127,7 @@ public:
                       ", max_tokens=" + std::to_string(max_tokens));
 
         // Serialize and send over existing TCP connection
-        std::vector<uint8_t> buffer = request.serialize();
+        std::vector<uint8_t> buffer = serialize_message(request);
         ssize_t sent = ::send(sock_fd_, buffer.data(), buffer.size(), 0);
         if (sent < 0)
         {
@@ -144,7 +144,8 @@ public:
         }
 
         // Wait for response on same TCP connection
-        std::vector<uint8_t> recv_buffer(Message::MAX_MESSAGE_SIZE);
+        static constexpr size_t MAX_RECV_BUFFER = 65536;
+        std::vector<uint8_t> recv_buffer(MAX_RECV_BUFFER);
         ssize_t received = ::recv(sock_fd_, recv_buffer.data(), recv_buffer.size(), 0);
 
         auto end_time = std::chrono::high_resolution_clock::now();
@@ -169,7 +170,13 @@ public:
         try
         {
             recv_buffer.resize(received);
-            response = Message::deserialize(recv_buffer);
+            auto msg_ptr = deserialize_message(recv_buffer);
+            if (!msg_ptr)
+            {
+                Logger::error("Failed to deserialize response: null message");
+                return false;
+            }
+            response = *msg_ptr;
         }
         catch (const std::exception &e)
         {
@@ -423,7 +430,7 @@ int main(int argc, char **argv)
     }
 
     // Initialize logger
-    Logger::init(LogLevel::INFO);
+    Logger::init(Logger::LogLevel::INFO);
 
     std::cout << "========================================\n";
     std::cout << "Disaggregated LLM Benchmark Client\n";

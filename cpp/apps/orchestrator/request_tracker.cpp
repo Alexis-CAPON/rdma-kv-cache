@@ -1,6 +1,7 @@
 #include "cpp/apps/orchestrator/request_tracker.h"
 #include "cpp/common/logger.h"
 #include <chrono>
+#include <mutex>
 
 void RequestTrackerOrchestrator::track_request(const RequestInfo &request, int client_fd)
 {

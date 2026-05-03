@@ -23,6 +23,28 @@
  * - Load tracking per node
  * - Slot availability tracking
  */
+// Configuration for memory slot management (must be outside RequestRouter to
+// avoid GCC default member initializer ordering restriction with nested classes)
+struct RequestRouterSlotConfig
+{
+    int max_slots_per_node = 8;      // Max concurrent requests per decode node
+    size_t buffer_size_mb = 16384;    // 16GB per decode node
+    int num_layers = 32;              // Transformer layers
+    size_t layer_size_mb = 128;       // 128MB per layer
+
+    size_t get_request_size_mb() const {
+        return num_layers * layer_size_mb;  // 4GB per request slot
+    }
+
+    size_t get_buffer_size_bytes() const {
+        return buffer_size_mb * 1024UL * 1024UL;
+    }
+
+    size_t get_layer_size_bytes() const {
+        return layer_size_mb * 1024UL * 1024UL;
+    }
+};
+
 class RequestRouter
 {
 public:
@@ -33,26 +55,7 @@ public:
         RANDOM
     };
 
-    // Configuration for memory slot management
-    struct SlotConfig
-    {
-        int max_slots_per_node = 8;      // Max concurrent requests per decode node
-        size_t buffer_size_mb = 16384;    // 16GB per decode node
-        int num_layers = 32;              // Transformer layers
-        size_t layer_size_mb = 128;       // 128MB per layer
-
-        size_t get_request_size_mb() const {
-            return num_layers * layer_size_mb;  // 4GB per request slot
-        }
-
-        size_t get_buffer_size_bytes() const {
-            return buffer_size_mb * 1024UL * 1024UL;
-        }
-
-        size_t get_layer_size_bytes() const {
-            return layer_size_mb * 1024UL * 1024UL;
-        }
-    };
+    using SlotConfig = RequestRouterSlotConfig;
 
     explicit RequestRouter(NodeRegistry &node_registry,
                            RoutingPolicy policy = RoutingPolicy::LEAST_LOADED,

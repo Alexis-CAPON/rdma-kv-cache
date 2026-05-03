@@ -6,7 +6,9 @@
 #include "cpp/rdma/device_probe.h"
 #include "cpp/common/logger.h"
 #include <infiniband/verbs.h>
+#ifdef ENABLE_GPU_DIRECT
 #include <cuda_runtime.h>
+#endif
 
 #include <fstream>
 #include <sstream>
@@ -120,6 +122,7 @@ namespace probe_detail
         return (pos == std::string::npos) ? path : path.substr(pos + 1);
     }
 
+#ifdef ENABLE_GPU_DIRECT
     std::string gpu_pci_bus_id(int gpu_id)
     {
         char buf[64] = {};
@@ -133,6 +136,7 @@ namespace probe_detail
             s = "0000:" + s;
         return s;
     }
+#endif
 
 } // namespace probe_detail
 
@@ -140,6 +144,7 @@ namespace probe_detail
 //  Step 1 — Enumerate and validate CUDA GPUs
 // ─────────────────────────────────────────────────────────────────────────────
 
+#ifdef ENABLE_GPU_DIRECT
 std::vector<int> discover_gpus(const GpuConfig &gcfg)
 {
     int total = 0;
@@ -243,6 +248,7 @@ std::vector<int> discover_gpus(const GpuConfig &gcfg)
 
     return valid;
 }
+#endif // ENABLE_GPU_DIRECT
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Step 2 — Enumerate and validate IB devices / ports
@@ -409,6 +415,7 @@ std::vector<BoundDevice> bind_gpus_to_hcas(
         BoundDevice bd;
         bd.gpu_id = gpu_id;
 
+#ifdef ENABLE_GPU_DIRECT
         cudaDeviceProp prop{};
         cudaGetDeviceProperties(&prop, gpu_id);
         bd.gpu_name = prop.name;
@@ -416,6 +423,7 @@ std::vector<BoundDevice> bind_gpus_to_hcas(
 
         std::string gpu_pci = probe_detail::gpu_pci_bus_id(gpu_id);
         bd.gpu_numa = probe_detail::pci_numa_node(gpu_pci);
+#endif
 
         // Find best IB port: prefer same NUMA node, then highest speed
         const IbPortInfo *best = nullptr;
@@ -510,9 +518,25 @@ std::vector<BoundDevice> probe_and_bind(const Config &cfg)
 {
     Logger::info("=== Device probing ===");
 
+#ifdef ENABLE_GPU_DIRECT
     auto gpu_ids = discover_gpus(cfg.gpu);
     auto ib_ports = discover_ib_ports(cfg.rdma);
     auto bindings = bind_gpus_to_hcas(gpu_ids, ib_ports, cfg.rdma, cfg.gpu);
+#else
+    auto ib_ports = discover_ib_ports(cfg.rdma);
+    // CPU-only RDMA: no GPU binding needed
+    std::vector<BoundDevice> bindings;
+    if (!ib_ports.empty())
+    {
+        BoundDevice bd;
+        bd.ib_dev_name = ib_ports[0].dev_name;
+        bd.ib_port = ib_ports[0].port;
+        bd.ib_numa = ib_ports[0].numa_node;
+        bd.ib_speed_gbps = ib_ports[0].speed_gbps;
+        bd.ib_state = "PORT_ACTIVE";
+        bindings.push_back(bd);
+    }
+#endif
 
     Logger::info("=== Device probing complete ===");
 

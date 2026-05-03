@@ -56,8 +56,10 @@ namespace probe_detail
     // Get PCI bus ID of an IB device via sysfs
     std::string ib_pci_bus_id(const std::string &dev_name);
 
+#ifdef ENABLE_GPU_DIRECT
     // Get PCI bus ID of a CUDA GPU
     std::string gpu_pci_bus_id(int gpu_id);
+#endif
 
 } // namespace probe_detail
 
@@ -67,8 +69,11 @@ namespace probe_detail
  * Discover and validate CUDA GPUs
  * @param gcfg GPU configuration
  * @return Vector of valid GPU IDs
+ * Only available when ENABLE_GPU_DIRECT is defined.
  */
+#ifdef ENABLE_GPU_DIRECT
 std::vector<int> discover_gpus(const GpuConfig &gcfg);
+#endif
 
 /**
  * Discover and validate IB devices/ports

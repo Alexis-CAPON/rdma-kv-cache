@@ -120,14 +120,20 @@ protected:
     // ========== Accept Handlers ==========
 
     /**
-     * Handle new client connection
+     * Handle new client connection (default no-op; override in orchestrator)
      */
-    // virtual void handle_client_accept() = 0;
+    virtual void handle_client_accept() {}
 
     /**
      * Handle new server connection
      */
     virtual void handle_server_accept() = 0;
+
+    /**
+     * Called when a peer connection is established via connect_to_peer().
+     * Subclasses can override to track peer connections (e.g. in NodeInfo).
+     */
+    virtual void on_peer_connected(const std::string & /*host*/, int /*fd*/) {}
 
     // ========== I/O Handlers ==========
 

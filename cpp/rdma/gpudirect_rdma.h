@@ -87,9 +87,6 @@ void open_ib_device(RdmaContext &ctx, const std::string &dev_name);
 // QPs are created per-peer by RDMAEngine::create_qp_for_peer()
 void create_cqs_only(RdmaContext &ctx, const RdmaConfig &rcfg);
 
-// Drive QP INIT → RTR → RTS (requires ctx.remote_addr to be filled)
-void connect_qp(RdmaContext &ctx, const RdmaConfig &rcfg);
-
 // Post one RDMA WRITE_WITH_IMM to the send queue
 void post_rdma_write(RdmaContext &ctx,
                      size_t src_offset,

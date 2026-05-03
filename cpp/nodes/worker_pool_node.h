@@ -10,7 +10,8 @@
 #include "cpp/nodes/epoll_worker_node.h"
 #include "cpp/common/config.h"
 #include "cpp/nodes/request_tracker_layer.h"
-#include "cpp/nodes/node.h"
+
+class Node; // forward declaration to avoid circular include
 
 #include "cpp/nodes/worker_pool_base.h"
 

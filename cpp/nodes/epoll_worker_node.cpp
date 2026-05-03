@@ -49,6 +49,7 @@ void EpollWorkerNode::start()
     }
 
     // Add server listening socket to epoll
+    struct epoll_event ev{};
     ev.events = EPOLLIN | EPOLLET; // Edge-triggered
     ev.data.fd = server_tcp_server_.get_fd();
 
@@ -72,7 +73,7 @@ void EpollWorkerNode::start()
 
     // Start I/O thread
     running_ = true;
-    io_thread_ = std::thread(&EpollWorker::run, this);
+    io_thread_ = std::thread([this]() { run(); });
 
     Logger::info("EpollWorker started");
 }
@@ -147,4 +148,10 @@ void EpollWorkerNode::handle_server_accept()
             Logger::error("EpollWorker: failed to add server connection fd=" + std::to_string(fd));
         }
     }
+}
+
+void EpollWorkerNode::on_peer_connected(const std::string &host, int fd)
+{
+    std::lock_guard<std::mutex> lock(node_info_mutex_);
+    node_info_.node_other_node_fd.push_back({host, fd});
 }

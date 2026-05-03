@@ -21,7 +21,6 @@ class EpollWorkerOrchestrator : public EpollWorkerBase
 public:
     EpollWorkerOrchestrator(EventQueue &eventqueue, TCPServer &client_tcp_server, TCPServer &server_tcp_server, NodeRegistry &node_registry);
 
-protected:
     void start() override;
 
     // ========== Accept Handlers ==========

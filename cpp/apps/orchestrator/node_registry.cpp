@@ -1,6 +1,7 @@
 #include "cpp/apps/orchestrator/node_registry.h"
 #include "cpp/common/logger.h"
 #include <algorithm>
+#include <mutex>
 
 // ============================================================================
 // Node Management

@@ -20,5 +20,6 @@ WorkerPoolBase::WorkerPoolBase(
 
 WorkerPoolBase::~WorkerPoolBase()
 {
-    stop();
+    // Note: derived classes are responsible for calling stop() in their own
+    // destructors. Calling a pure virtual function here is undefined behavior.
 }
