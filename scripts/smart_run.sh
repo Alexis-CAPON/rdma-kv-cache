@@ -125,7 +125,6 @@ for i in "${!PREFILL_NODES[@]}"; do
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && mkdir -p logs && \
         source ${REMOTE_DIR}/venv/bin/activate && \
-        export PYTHONPATH=${VLLM_PATH}:\${PYTHONPATH} && \
         ${MOONCAKE_ENV} \
         nohup python -m vllm.entrypoints.openai.api_server \
             --model ${MODEL_NAME} \
@@ -207,7 +206,6 @@ for i in "${!DECODE_NODES[@]}"; do
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
         "cd ${REMOTE_DIR} && mkdir -p logs && \
         source ${REMOTE_DIR}/venv/bin/activate && \
-        export PYTHONPATH=${VLLM_PATH}:\${PYTHONPATH} && \
         ${MOONCAKE_ENV} \
         nohup python -m vllm.entrypoints.openai.api_server \
             --model ${MODEL_NAME} \

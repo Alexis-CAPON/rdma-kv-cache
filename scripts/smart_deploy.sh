@@ -103,7 +103,54 @@ fi
 echo ""
 
 # ============================================
-# Step 1: Sync Code to Remote Nodes
+# Step 1: Install Dependencies on Remote Nodes
+# ============================================
+
+log_step "Installing dependencies on all nodes (this may take 15-30 minutes)..."
+
+INSTALL_PIDS=()
+INSTALL_LOGS=()
+
+for NODE in "${DEPLOY_NODES[@]}"; do
+    HOST=$(get_full_hostname "$NODE")
+    LOG_FILE="/tmp/install_$(echo "${NODE}" | tr -cs 'a-zA-Z0-9' '_').log"
+    INSTALL_LOGS+=("$LOG_FILE")
+
+    log_info "Copying install script to ${HOST}..."
+    scp "${SSH_OPTS[@]}" \
+        "${SCRIPT_DIR}/install_dependencies.sh" \
+        "${USERNAME}@${HOST}:/tmp/install_dependencies.sh" 2>/dev/null
+
+    log_info "Starting installation on ${HOST}..."
+    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
+        "chmod +x /tmp/install_dependencies.sh && \
+         USE_GPU=\"${USE_GPU}\" bash /tmp/install_dependencies.sh 2>&1" \
+        > "$LOG_FILE" 2>&1 &
+
+    INSTALL_PIDS+=($!)
+    sleep 1
+done
+
+# Wait for all installations to complete
+for i in "${!INSTALL_PIDS[@]}"; do
+    pid="${INSTALL_PIDS[$i]}"
+    NODE="${DEPLOY_NODES[$i]}"
+    HOST=$(get_full_hostname "$NODE")
+    LOG_FILE="${INSTALL_LOGS[$i]}"
+
+    if wait $pid; then
+        log_success "Dependencies installed on ${HOST}"
+    else
+        log_error "Dependency installation failed on ${HOST}"
+        log_error "Check log: ${LOG_FILE}"
+        exit 1
+    fi
+done
+
+echo ""
+
+# ============================================
+# Step 2: Sync Code to Remote Nodes
 # ============================================
 
 log_step "Syncing code and configs to remote nodes..."
@@ -150,7 +197,7 @@ log_success "Code and configs synced to all nodes"
 echo ""
 
 # ============================================
-# Step 2: Build on Remote Nodes
+# Step 3: Build on Remote Nodes
 # ============================================
 
 log_step "Building on remote nodes..."
@@ -183,7 +230,7 @@ done
 echo ""
 
 # ============================================
-# Step 3: Install Python Bindings
+# Step 4: Install Python Bindings
 # ============================================
 
 log_step "Installing Python RDMA bindings..."
@@ -211,7 +258,7 @@ log_success "Python bindings installed"
 echo ""
 
 # ============================================
-# Step 4: Setup vLLM with RDMAConnector
+# Step 5: Setup vLLM with RDMAConnector
 # ============================================
 
 log_step "Setting up vLLM connector..."
@@ -221,11 +268,16 @@ for NODE in "${DEPLOY_NODES[@]}"; do
 
     log_info "Installing RDMAConnector on ${HOST}..."
 
-    # Copy RDMAConnector to vLLM
+    # Copy RDMAConnector into the venv's vllm installation directory
     ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "mkdir -p ${VLLM_PATH}/vllm/distributed/kv_transfer/kv_connector/v1 && \
+        "source ${REMOTE_DIR}/venv/bin/activate && \
+         VLLM_DIR=\$(python -c 'import vllm, os; print(os.path.dirname(vllm.__file__))') && \
+         if [ -z \"\${VLLM_DIR}\" ] || [ ! -d \"\${VLLM_DIR}\" ]; then
+             echo 'ERROR: Could not locate vllm package in venv'; exit 1
+         fi && \
+         mkdir -p \"\${VLLM_DIR}/distributed/kv_transfer/kv_connector/v1\" && \
          cp ${REMOTE_DIR}/python/rdma_connector.py \
-            ${VLLM_PATH}/vllm/distributed/kv_transfer/kv_connector/v1/" &
+            \"\${VLLM_DIR}/distributed/kv_transfer/kv_connector/v1/\"" &
 done
 
 wait

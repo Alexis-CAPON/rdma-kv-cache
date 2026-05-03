@@ -72,6 +72,7 @@ REMOTE_DIR="${REMOTE_DIR:-/users/${USERNAME}/rdma-kv-cache}"
 LOCAL_DIR="${LOCAL_DIR:-$PROJECT_ROOT}"
 
 # Port configuration
+IB_PORT="${IB_PORT:-1}"
 ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-6010}"
 ORCHESTRATOR_NODE_PORT="${ORCHESTRATOR_NODE_PORT:-6011}"  # Orchestrator port for node (prefill/decode) connections
 VLLM_PREFILL_BASE_PORT="${VLLM_PREFILL_BASE_PORT:-6020}"  # Prefill nodes: 6020, 6021, 6022...
