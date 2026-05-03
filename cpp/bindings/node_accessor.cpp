@@ -1,9 +1,10 @@
 // cpp/bindings/node_accessor.cpp
+#ifdef ENABLE_PYTHON_BINDINGS
 #include <pybind11/pybind11.h>
+namespace py = pybind11;
+#endif
 #include "cpp/nodes/node.h"
 #include "cpp/rdma/rdma_engine.h"
-
-namespace py = pybind11;
 
 static Node *g_current_node = nullptr;
 
@@ -17,6 +18,7 @@ RDMAEngine *get_node_rdma_engine()
     return g_current_node ? g_current_node->get_rdma_engine() : nullptr;
 }
 
+#ifdef ENABLE_PYTHON_BINDINGS
 PYBIND11_MODULE(node_accessor, m)
 {
     m.doc() = "Node accessor for accessing RDMA engine from vLLM Python connector";
@@ -29,3 +31,4 @@ PYBIND11_MODULE(node_accessor, m)
           py::return_value_policy::reference,
           "Get pointer to the node's RDMA engine");
 }
+#endif

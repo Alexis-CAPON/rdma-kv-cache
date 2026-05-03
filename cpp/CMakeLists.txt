@@ -25,12 +25,17 @@ endif()
 add_library(common STATIC
     common/config.cpp
     common/connection.cpp
+    common/logger.cpp
     common/messages.cpp
+    common/utils.cpp
 )
 
 target_include_directories(common PUBLIC
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/cpp
 )
+
+target_link_libraries(common PUBLIC yaml-cpp)
 
 # ============================================================================
 # Network Libraries
@@ -61,10 +66,10 @@ target_include_directories(network PUBLIC
 add_library(rdma_engine STATIC
     rdma/rdma_engine.cpp
     rdma/device_probe.cpp
+    rdma/gpudirect_rdma.cpp
 )
 
 if(ENABLE_GPU_DIRECT)
-    target_sources(rdma_engine PRIVATE rdma/gpudirect_rdma.cpp)
     target_compile_definitions(rdma_engine PUBLIC ENABLE_GPU_DIRECT)
     target_link_libraries(rdma_engine PUBLIC CUDA::cudart)
     target_include_directories(rdma_engine PUBLIC ${CUDAToolkit_INCLUDE_DIRS})
@@ -103,6 +108,7 @@ target_link_libraries(rdma_engine
 
 add_library(nodes STATIC
     nodes/node.cpp
+    nodes/event_queue.cpp
     nodes/worker_base.cpp
     nodes/worker_orchestrator.cpp
     nodes/worker_node.cpp
@@ -113,6 +119,7 @@ add_library(nodes STATIC
     nodes/worker_pool_orchestrator.cpp
     nodes/worker_pool_node.cpp
     nodes/request_tracker_layer.cpp
+    bindings/node_accessor.cpp
 )
 
 target_link_libraries(nodes

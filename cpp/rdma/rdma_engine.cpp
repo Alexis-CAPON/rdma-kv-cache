@@ -5,6 +5,8 @@
 #ifdef ENABLE_GPU_DIRECT
 #include <cuda_runtime.h>
 #endif
+#include <arpa/inet.h>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -451,6 +453,7 @@ bool RDMAEngine::probe_and_bind_devices()
 
     try
     {
+#ifdef ENABLE_GPU_DIRECT
         // Use device_probe to find GPU and HCA
         // Since we support one GPU per node, we pick the first (or user-specified)
         auto gpu_ids = discover_gpus(config_.gpu);
@@ -476,8 +479,15 @@ bool RDMAEngine::probe_and_bind_devices()
         // Get GPU PCI info for NUMA
         std::string gpu_pci = probe_detail::gpu_pci_bus_id(gpu_id);
         node_info_.gpu_numa = probe_detail::pci_numa_node(gpu_pci);
+#else
+        // CPU-only mode: no GPU probing
+        rdma_ctx_.gpu_id = 0;
+        node_info_.gpu_id = 0;
+        node_info_.gpu_name = "CPU-only";
+        node_info_.gpu_numa = 0;
+#endif
 
-        Logger::info("RDMAEngine: Selected GPU" + std::to_string(gpu_id) +
+        Logger::info("RDMAEngine: Selected GPU" + std::to_string(rdma_ctx_.gpu_id) +
                      " (" + node_info_.gpu_name + ")" +
                      " NUMA=" + std::to_string(node_info_.gpu_numa));
 
@@ -540,7 +550,9 @@ bool RDMAEngine::bind_cuda_device()
 
     try
     {
-        bind_cuda_device(rdma_ctx_.gpu_id);
+#ifdef ENABLE_GPU_DIRECT
+        ::bind_cuda_device(rdma_ctx_.gpu_id);
+#endif
         return true;
     }
     catch (const std::exception &ex)
@@ -556,7 +568,7 @@ bool RDMAEngine::open_ib_device()
 
     try
     {
-        open_ib_device(rdma_ctx_, node_info_.ib_dev_name);
+        ::open_ib_device(rdma_ctx_, node_info_.ib_dev_name);
         return true;
     }
     catch (const std::exception &ex)
@@ -575,7 +587,36 @@ bool RDMAEngine::alloc_and_register_gpu_memory()
 
     try
     {
+#ifdef ENABLE_GPU_DIRECT
         alloc_and_register_gpu_mem(rdma_ctx_, kv_bytes, rdma_ctx_.gpu_id, config_.memory);
+#else
+        // CPU-only RDMA: allocate pinned host memory and register it as MR
+        void *cpu_buf = nullptr;
+        if (posix_memalign(&cpu_buf, 4096, kv_bytes) != 0 || !cpu_buf)
+        {
+            Logger::error("RDMAEngine: posix_memalign failed for CPU RDMA buffer");
+            return false;
+        }
+
+        int mr_flags = IBV_ACCESS_LOCAL_WRITE |
+                       IBV_ACCESS_REMOTE_WRITE |
+                       IBV_ACCESS_REMOTE_READ;
+        rdma_ctx_.mem.h_ptr = cpu_buf;
+        rdma_ctx_.mem.d_ptr = cpu_buf;
+        rdma_ctx_.mem.bytes = kv_bytes;
+        rdma_ctx_.mem.mr = ibv_reg_mr(rdma_ctx_.pd, cpu_buf, kv_bytes, mr_flags);
+        if (!rdma_ctx_.mem.mr)
+        {
+            free(cpu_buf);
+            rdma_ctx_.mem.h_ptr = nullptr;
+            rdma_ctx_.mem.d_ptr = nullptr;
+            Logger::error("RDMAEngine: ibv_reg_mr failed for CPU RDMA buffer");
+            return false;
+        }
+        rdma_ctx_.mem.lkey = rdma_ctx_.mem.mr->lkey;
+        rdma_ctx_.mem.rkey = rdma_ctx_.mem.mr->rkey;
+        rdma_ctx_.mem.addr = reinterpret_cast<uint64_t>(cpu_buf);
+#endif
 
         // Fill NodeInfo with MR details
         node_info_.gpu_base_addr = rdma_ctx_.mem.addr;
@@ -583,7 +624,7 @@ bool RDMAEngine::alloc_and_register_gpu_memory()
         node_info_.rkey = rdma_ctx_.mem.rkey;
         node_info_.memory_pool_size = rdma_ctx_.mem.bytes;
 
-        Logger::debug("RDMAEngine: GPU memory registered successfully" +
+        Logger::debug(std::string("RDMAEngine: GPU memory registered successfully") +
                       " rkey=0x" + std::to_string(node_info_.rkey) +
                       " addr=0x" + std::to_string(node_info_.gpu_base_addr));
 
@@ -752,8 +793,18 @@ bool RDMAEngine::connect_qp_to_peer(const std::string &peer_id, ibv_qp *qp)
             {
                 // Auto-discovery: use port's active MTU
                 attr.path_mtu = rdma_ctx_.port_attr.active_mtu;
+                auto mtu_to_bytes = [](ibv_mtu m) -> int {
+                    switch (m) {
+                    case IBV_MTU_256:  return 256;
+                    case IBV_MTU_512:  return 512;
+                    case IBV_MTU_1024: return 1024;
+                    case IBV_MTU_2048: return 2048;
+                    case IBV_MTU_4096: return 4096;
+                    default:           return 4096;
+                    }
+                };
                 Logger::info("Auto-discovered MTU: " +
-                             std::to_string(ibv_mtu_to_num(rdma_ctx_.port_attr.active_mtu)) +
+                             std::to_string(mtu_to_bytes(rdma_ctx_.port_attr.active_mtu)) +
                              " bytes (optimal for this fabric)");
             }
 

@@ -34,20 +34,19 @@ public:
         return orchestrator_fd_;
     };
 
-protected:
-    /**
-     * Start the epoll I/O thread
-     */
     void start() override;
-
-    void handle_server_accept() override;
-
-private:
-    NodeInfo &node_info_;
-
-    int orchestrator_fd_ = -1; // File descriptor for orchestrator connection (if connected)
 
     bool connect_to_orchestrator(const std::string &host, uint16_t port);
 
     bool send_node_info_to_orchestrator();
+
+    void handle_server_accept() override;
+
+protected:
+    void on_peer_connected(const std::string &host, int fd) override;
+
+private:
+    NodeInfo &node_info_;
+    int orchestrator_fd_ = -1; // File descriptor for orchestrator connection (if connected)
+    std::mutex node_info_mutex_;
 };

@@ -14,6 +14,7 @@
 #include "cpp/apps/orchestrator/rdma_exchange_tracker.h"
 #include "cpp/apps/orchestrator/request_tracker.h"
 #include "cpp/apps/orchestrator/request_router.h"
+#include "cpp/nodes/epoll_worker_orchestrator.h"
 
 class WorkerOrchestrator : public WorkerBase
 {

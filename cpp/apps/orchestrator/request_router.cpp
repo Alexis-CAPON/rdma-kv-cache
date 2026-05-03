@@ -2,6 +2,7 @@
 #include "cpp/common/logger.h"
 #include <random>
 #include <algorithm>
+#include <mutex>
 
 RequestRouter::RequestRouter(NodeRegistry &node_registry,
                             RoutingPolicy policy,

@@ -2,6 +2,7 @@
 #include "cpp/common/types.h"
 #include <vector>
 #include <unordered_map>
+#include <optional>
 #include <shared_mutex>
 
 class NodeRegistry

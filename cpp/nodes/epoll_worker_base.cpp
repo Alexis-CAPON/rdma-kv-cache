@@ -572,11 +572,8 @@ bool EpollWorkerBase::connect_to_peer(const std::string &host, uint16_t port)
 
     int peer_fd = conn->get_fd();
 
-    // FIX: Protect vector access with mutex (race with handle_server_accept and worker reads)
-    {
-        std::lock_guard<std::mutex> lock(node_info_mutex_);
-        node_info_.node_other_node_fd.push_back({host, peer_fd});
-    }
+    // Notify subclass of new peer connection (e.g. to update NodeInfo)
+    on_peer_connected(host, peer_fd);
 
     Logger::info("EpollWorker: connected to peer " + host + ":" + std::to_string(port) +
                  " (fd=" + std::to_string(peer_fd) + ")");

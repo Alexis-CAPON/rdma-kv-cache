@@ -16,7 +16,9 @@
 #include "cpp/rdma/gpudirect_rdma.h"
 #include "cpp/common/config.h"
 #include <infiniband/verbs.h>
+#ifdef ENABLE_GPU_DIRECT
 #include <cuda_runtime.h>
+#endif
 #include "cpp/common/logger.h"
 
 #include <cstring>
@@ -46,12 +48,14 @@ namespace
     }
 
     // Check CUDA return code and throw on error
+#ifdef ENABLE_GPU_DIRECT
     static void cuda_must(cudaError_t e, const char *where)
     {
         if (e != cudaSuccess)
             throw std::runtime_error(
                 std::string(where) + ": " + cudaGetErrorString(e));
     }
+#endif
 
     // Convert config MTU int to ibv_mtu enum
     static ibv_mtu mtu_to_enum(int mtu)
@@ -75,6 +79,20 @@ namespace
         }
     }
 
+    // Convert ibv_mtu enum to integer byte count
+    static int mtu_enum_to_bytes(ibv_mtu mtu)
+    {
+        switch (mtu)
+        {
+        case IBV_MTU_256:  return 256;
+        case IBV_MTU_512:  return 512;
+        case IBV_MTU_1024: return 1024;
+        case IBV_MTU_2048: return 2048;
+        case IBV_MTU_4096: return 4096;
+        default:           return 4096;
+        }
+    }
+
     // Hexdump a GID for logging
     static std::string fmt_gid(const uint8_t gid[16])
     {
@@ -91,6 +109,7 @@ namespace
 
 } // anonymous namespace
 
+#ifdef ENABLE_GPU_DIRECT
 // ─────────────────────────────────────────────────────────────────────────────
 //  bind_cuda_device
 //
@@ -150,6 +169,7 @@ void bind_cuda_device(int gpu_id)
         }
     }
 }
+#endif // ENABLE_GPU_DIRECT
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  open_ib_device
@@ -243,38 +263,23 @@ void open_ib_device(RdmaContext &ctx, const std::string &dev_name)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  alloc_and_register_gpu_mem
+//  alloc_and_register_gpu_mem   (only compiled when ENABLE_GPU_DIRECT is set)
 //
 //  Allocates a buffer in GPU HBM2 with cudaMalloc and registers it as an RDMA
 //  Memory Region via ibv_reg_mr.
 //
 //  The GPUDirect RDMA path through ibv_reg_mr:
-//
-//    1. libibverbs calls into the mlx5 provider (libibverbs/providers/mlx5).
+//    1. libibverbs calls into the mlx5 provider.
 //    2. The provider calls the kernel verb (via /dev/infiniband/uverbs0).
-//    3. ib_core checks whether the VA range is "peer memory" by calling every
-//       registered peer_memory_client — nvidia_peermem registers one.
-//    4. nvidia_peermem calls into the NVIDIA kernel driver, which pins the
-//       physical HBM2 pages backing ctx.mem.d_ptr and returns their physical
-//       addresses to ib_core.
-//    5. ib_core programs the HCA's MPT (Memory Protection Table) with those
-//       physical addresses.  The HCA can now DMA to/from GPU memory.
-//    6. ibv_reg_mr returns an ibv_mr* with valid lkey and rkey.
-//
-//  From this point the verbs layer treats the GPU MR identically to a host MR.
-//  No special opcode, no special flag at post_send time.
+//    3. ib_core calls nvidia_peermem, which pins the physical HBM2 pages.
+//    4. ib_core programs the HCA's MPT with those physical addresses.
+//    5. ibv_reg_mr returns an ibv_mr* with valid lkey and rkey.
 //
 //  IBV_ACCESS_RELAXED_ORDERING:
-//  On PCIe the NIC issues memory-write transactions that can arrive out of
-//  order relative to each other.  For host memory, the CPU's cache coherence
-//  protocol resolves this transparently.  GPU memory has NO cache coherence
-//  with the CPU — the GPU's memory controller sees raw PCIe writes.  Without
-//  RELAXED_ORDERING the HCA inserts PCIe fences between every write
-//  transaction, serialising them and costing ~30% bandwidth.  With it, the
-//  HCA can pipeline writes and lets the GPU's memory controller sort out
-//  ordering.  This flag requires OFED >= 5.0 and Linux kernel >= 5.2.
+//  Without RELAXED_ORDERING the HCA inserts PCIe fences between every write
+//  transaction, costing ~30% bandwidth. Requires OFED >= 5.0, Linux >= 5.2.
 // ─────────────────────────────────────────────────────────────────────────────
-
+#ifdef ENABLE_GPU_DIRECT
 void alloc_and_register_gpu_mem(RdmaContext &ctx,
                                 size_t bytes,
                                 int gpu_id,
@@ -372,6 +377,7 @@ void alloc_and_register_gpu_mem(RdmaContext &ctx,
                   "  d_ptr=0x" + std::hex + std::to_string(ctx.mem.addr) +
                   std::dec);
 }
+#endif // ENABLE_GPU_DIRECT
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  create_cqs_only
@@ -434,136 +440,6 @@ void create_cqs_only(RdmaContext &ctx, const RdmaConfig &rcfg)
     // FIX BUG #13: QP creation removed
     // QPs are now created per-peer by RDMAEngine::create_qp_for_peer()
     // Each peer QP will reference these shared CQs via ibv_qp_init_attr
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  connect_qp
-//
-//  Drives the QP from INIT → RTR → RTS using the remote peer's address
-//  (filled into ctx.remote_addr by the OOB exchange in main.cpp).
-//
-//  INIT → RTR (Ready To Receive):
-//  The QP learns the remote endpoint's address: QPN, GID/LID, PSN.
-//  At RTR the QP can receive incoming RDMA WRITEs, but cannot send yet.
-//  We must reach RTR before the remote side posts its first WRITE.
-//
-//  RTR → RTS (Ready To Send):
-//  Configures retransmit timers and enables the send queue.
-//  After this transition both sides can post send WRs.
-//
-//  Key parameters explained:
-//
-//  path_mtu — must match or be <= the fabric MTU.  Larger MTU means fewer
-//  packets per RDMA WRITE, less header overhead, more bandwidth efficiency.
-//  4096 is the maximum for EDR InfiniBand.
-//
-//  max_dest_rd_atomic / max_rd_atomic — maximum outstanding RDMA READ or
-//  atomic operations (from the remote side / from this side).  We set 16 for
-//  both to allow pipelining of reads if needed in future; for pure WRITE
-//  workloads this is unused but harmless.
-//
-//  min_rnr_timer — if the receive queue is empty when a message arrives, the
-//  HCA sends a RNR (Receiver Not Ready) NAK and waits this long before
-//  retransmitting.  12 ≈ 0.64 ms.  Too small and you flood the fabric with
-//  retransmits; too large and you add unnecessary latency.
-//
-//  timeout — local ACK timeout for the send queue.  14 ≈ 67 ms.  If no ACK
-//  arrives within this window, the HCA retransmits.  retry_cnt=7 means up to
-//  7 retransmits before the QP enters error state.
-//
-//  ah_attr.is_global = 1 — always set for RoCEv2 (the GRH is the routing
-//  header on Ethernet).  For native IB over IB fabric you can use is_global=0
-//  and fill only the LID; setting is_global=1 with a valid GID works for both.
-// ─────────────────────────────────────────────────────────────────────────────
-
-void connect_qp(RdmaContext &ctx, const RdmaConfig &rcfg)
-{
-
-    // ── INIT → RTR ───────────────────────────────────────────────────────────
-    {
-        ibv_qp_attr attr{};
-        attr.qp_state = IBV_QPS_RTR;
-
-        // Use active_mtu from port attributes (auto-discovered)
-        // This prevents fragmentation on RoCE/Ethernet where MTU may be < 4096
-        // Falls back to config if override is specified (non-zero)
-        if (rcfg.mtu > 0)
-        {
-            attr.path_mtu = mtu_to_enum(rcfg.mtu);
-            std::cout << "[QP] Using configured MTU: " << rcfg.mtu << "\n";
-        }
-        else
-        {
-            attr.path_mtu = ctx.port_attr.active_mtu;
-            std::cout << "[QP] Auto-discovered MTU: "
-                      << ibv_mtu_to_num(ctx.port_attr.active_mtu)
-                      << " bytes (optimal for this fabric)\n";
-        }
-
-        attr.dest_qp_num = ctx.remote_addr.qpn;
-        attr.rq_psn = ctx.remote_addr.psn;
-        attr.max_dest_rd_atomic = static_cast<uint8_t>(rcfg.max_rd_atomic);
-        attr.min_rnr_timer = static_cast<uint8_t>(rcfg.min_rnr_timer);
-
-        // Address Handle attributes — describes the path to the remote port
-        attr.ah_attr.is_global = 1;
-        attr.ah_attr.port_num = static_cast<uint8_t>(rcfg.ib_port);
-        attr.ah_attr.sl = static_cast<uint8_t>(rcfg.sl);
-        attr.ah_attr.src_path_bits = 0;
-
-        // GRH (Global Routing Header) — used for RoCEv2 and for IB with GIDs
-        std::memcpy(attr.ah_attr.grh.dgid.raw,
-                    ctx.remote_addr.gid, 16);
-        attr.ah_attr.grh.sgid_index = static_cast<uint8_t>(rcfg.gid_index);
-        attr.ah_attr.grh.hop_limit = 64;
-        attr.ah_attr.grh.traffic_class = 0;
-        attr.ah_attr.dlid = ctx.remote_addr.lid;
-
-        int mask = IBV_QP_STATE |
-                   IBV_QP_AV |
-                   IBV_QP_PATH_MTU |
-                   IBV_QP_DEST_QPN |
-                   IBV_QP_RQ_PSN |
-                   IBV_QP_MAX_DEST_RD_ATOMIC |
-                   IBV_QP_MIN_RNR_TIMER;
-
-        if (ibv_modify_qp(ctx.qp, &attr, mask))
-            throw std::runtime_error(
-                "[QP] INIT→RTR failed — errno=" + errno_str(errno) +
-                ".  Common causes: remote QPN/GID wrong, MTU mismatch, "
-                "pkey mismatch.");
-
-        std::cout << "[QP] INIT→RTR  remote_QPN=0x"
-                  << std::hex << ctx.remote_addr.qpn
-                  << "  remote_GID=" << fmt_gid(ctx.remote_addr.gid)
-                  << std::dec << "\n";
-    }
-
-    // ── RTR → RTS ────────────────────────────────────────────────────────────
-    {
-        ibv_qp_attr attr{};
-        attr.qp_state = IBV_QPS_RTS;
-        attr.sq_psn = ctx.local_addr.psn;
-        attr.timeout = static_cast<uint8_t>(rcfg.timeout);
-        attr.retry_cnt = static_cast<uint8_t>(rcfg.retry_cnt);
-        attr.rnr_retry = static_cast<uint8_t>(rcfg.rnr_retry);
-        attr.max_rd_atomic = static_cast<uint8_t>(rcfg.max_rd_atomic);
-
-        int mask = IBV_QP_STATE |
-                   IBV_QP_SQ_PSN |
-                   IBV_QP_TIMEOUT |
-                   IBV_QP_RETRY_CNT |
-                   IBV_QP_RNR_RETRY |
-                   IBV_QP_MAX_QP_RD_ATOMIC;
-
-        if (ibv_modify_qp(ctx.qp, &attr, mask))
-            throw std::runtime_error(
-                "[QP] RTR→RTS failed — errno=" + errno_str(errno));
-
-        std::cout << "[QP] RTR→RTS  sq_psn=" << ctx.local_addr.psn
-                  << "  timeout=" << rcfg.timeout
-                  << "  retry=" << rcfg.retry_cnt << "\n";
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -791,6 +667,7 @@ void destroy_rdma_context(RdmaContext &ctx)
     }
 
     // 6. Free GPU memory — safe now that MR is gone
+#ifdef ENABLE_GPU_DIRECT
     if (ctx.mem.d_ptr)
     {
         cudaSetDevice(ctx.gpu_id);
@@ -804,6 +681,15 @@ void destroy_rdma_context(RdmaContext &ctx)
         cudaFreeHost(ctx.mem.h_ptr);
         ctx.mem.h_ptr = nullptr;
     }
+#else
+    // CPU-only: free posix_memalign buffer
+    if (ctx.mem.h_ptr)
+    {
+        free(ctx.mem.h_ptr);
+        ctx.mem.h_ptr = nullptr;
+        ctx.mem.d_ptr = nullptr;
+    }
+#endif
 
     ctx.mem.bytes = 0;
     ctx.mem.addr = 0;

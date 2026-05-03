@@ -47,10 +47,6 @@ void WorkerOrchestrator::process_event(Event &event)
         break;
         // Orchestrator
 
-    case MessageType::ASSIGN_REQUEST:
-        handle_assign_request(event.client_fd, event.message.get());
-        break;
-
     case MessageType::RDMA_PROCESS_REGISTRATION:
         handle_process_rdma_registration(event.client_fd, event.message.get());
         break;
