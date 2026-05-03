@@ -19,12 +19,15 @@ target_link_libraries(rdma_bindings
         common
         ${IBVERBS_LIB}
         ${RDMACM_LIB}
-        ${CUDA_LIBRARIES}
 )
+
+if(ENABLE_GPU_DIRECT)
+    target_link_libraries(rdma_bindings PRIVATE CUDA::cudart)
+    target_include_directories(rdma_bindings PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+endif()
 
 target_include_directories(rdma_bindings PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${CUDA_INCLUDE_DIRS}
 )
 
 # ============================================================================

@@ -46,6 +46,10 @@ void WorkerNode::process_event(Event &event)
 
         // Prefill/Decode nodes
 
+    case MessageType::PREPARE_DECODE_SLOT:
+        handle_prepare_decode_slot(event.client_fd, event.message.get());
+        break;
+
     case MessageType::BROADCAST_MEMBER_INFO:
         handle_broadcast_member_info(event.message.get());
         break;
@@ -365,39 +369,6 @@ void WorkerNode::handle_prefill_complete(int server_fd, Message *msg)
     int num_tokens = msg->kv_metadata.num_tokens;
     std::string prefill_node_id = msg->request_info.prefill_node_id;
 
-    // Register with RequestTrackerLayer — assigns seq_num, pre-computes offsets
-    try
-    {
-        uint16_t seq_num = request_tracker_layer_.add_request(
-            request_id,
-            prefill_node_id,
-            slot_id,
-            num_layers);
-
-        // Store additional metadata
-        RequestTrackerLayer::RequestInfo info;
-        if (request_tracker_layer_.get_request(request_id, info))
-        {
-            // Update metadata (prompt, tokens, etc. not set by add_request)
-            // Note: These are stored in the RequestInfo but add_request doesn't take them
-            // For now we'll just update state
-        }
-
-        request_tracker_layer_.update_state(
-            request_id,
-            RequestTrackerLayer::State::WAITING_FOR_KV);
-
-        Logger::info("Decode: registered request " + request_id +
-                     " slot=" + std::to_string(slot_id) +
-                     " seq_num=" + std::to_string(seq_num) +
-                     ", waiting for " + std::to_string(num_layers) + " RDMA layers");
-    }
-    catch (const std::exception &e)
-    {
-        Logger::error("Failed to register request in RequestTrackerLayer: " + std::string(e.what()));
-        return;
-    }
-
     // ← No vLLM call here. Return and wait for KV_TRANSFER_COMPLETE.
 }
 
@@ -456,4 +427,21 @@ void WorkerNode::handle_kv_transfer_complete(int /*unused_fd*/, Message *msg)
 
     // Clean up
     request_tracker_layer_.remove_request(request_id);
+}
+
+void WorkerNode::handle_prepare_decode_slot(int server_fd, Message *msg)
+{
+
+    Logger::debug("Handling PREPARE_DECODE_SLOT for request " + request_id +
+                  " slot_id=" + std::to_string(slot_id));
+
+    request_tracker_layer_.add_request(
+        msg->request_info.request_id,
+        msg->request_info.prefill_node_id,
+        msg->request_info.slot_id,
+        config_.num_layers);
+
+    request_tracker_layer_.update_state(request_id, State::WAITING_FOR_KV);
+
+    // Also store prompt + max_tokens into the tracker entry so handle_kv_transfer_complete has them
 }

@@ -66,8 +66,8 @@ add_library(rdma_engine STATIC
 if(ENABLE_GPU_DIRECT)
     target_sources(rdma_engine PRIVATE rdma/gpudirect_rdma.cpp)
     target_compile_definitions(rdma_engine PUBLIC ENABLE_GPU_DIRECT)
-    target_link_libraries(rdma_engine PUBLIC ${CUDA_LIBRARIES})
-    target_include_directories(rdma_engine PUBLIC ${CUDA_INCLUDE_DIRS})
+    target_link_libraries(rdma_engine PUBLIC CUDA::cudart)
+    target_include_directories(rdma_engine PUBLIC ${CUDAToolkit_INCLUDE_DIRS})
 endif()
 
 target_link_libraries(rdma_engine
@@ -75,10 +75,6 @@ target_link_libraries(rdma_engine
         common
         ${IBVERBS_LIB}
         ${RDMACM_LIB}
-)
-
-target_include_directories(rdma_engine PUBLIC
-    ${CUDA_INCLUDE_DIRS}
 )
 
 # ============================================================================
@@ -107,11 +103,16 @@ target_include_directories(rdma_engine PUBLIC
 
 add_library(nodes STATIC
     nodes/node.cpp
-    nodes/worker.cpp
-    nodes/epoll_worker.cpp
-    nodes/worker_pool.cpp
-    nodes/request_tracker.cpp
-    nodes/request_tracker_layer.cpp  # NEW: Layer-based request tracking
+    nodes/worker_base.cpp
+    nodes/worker_orchestrator.cpp
+    nodes/worker_node.cpp
+    nodes/epoll_worker_base.cpp
+    nodes/epoll_worker_orchestrator.cpp
+    nodes/epoll_worker_node.cpp
+    nodes/worker_pool_base.cpp
+    nodes/worker_pool_orchestrator.cpp
+    nodes/worker_pool_node.cpp
+    nodes/request_tracker_layer.cpp
 )
 
 target_link_libraries(nodes

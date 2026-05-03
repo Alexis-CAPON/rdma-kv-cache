@@ -160,8 +160,8 @@ public:
 
             // Build memory registration flags with proper fallback
             int mr_flags = IBV_ACCESS_LOCAL_WRITE |
-                          IBV_ACCESS_REMOTE_WRITE |
-                          IBV_ACCESS_REMOTE_READ;
+                           IBV_ACCESS_REMOTE_WRITE |
+                           IBV_ACCESS_REMOTE_READ;
 
 #ifdef IBV_ACCESS_RELAXED_ORDERING
             mr_flags |= IBV_ACCESS_RELAXED_ORDERING;
@@ -175,8 +175,7 @@ public:
                 ctx.pd,
                 (void *)gpu_ptr,
                 size,
-                mr_flags
-            );
+                mr_flags);
 
             if (!mr)
             {
@@ -241,7 +240,7 @@ public:
         uint64_t local_addr, // Absolute address (vLLM memory)
         uint64_t remote_offset,
         size_t size,
-        uint32_t imm_data)   // FIX BUG #11/#12: Use imm_data, remove unused params
+        uint32_t imm_data) // FIX BUG #11/#12: Use imm_data, remove unused params
     {
         if (!rdma_engine_)
         {
@@ -258,6 +257,11 @@ public:
             return false;
         }
 
+        // Only signal every N-th write to avoid CQ overflow.
+        // A good heuristic: signal the last write per layer (V cache).
+        // The simpler approach: use a counter, signal every `cq_batch_size` writes.
+        bool signal = (++write_counter_ % cq_batch_size_ == 0);
+
         try
         {
             // FIX BUG #11: Pass imm_data for layer identification
@@ -269,8 +273,8 @@ public:
                 lkey.value(),
                 remote_offset,
                 size,
-                imm_data,  // ✓ Now passes actual layer identification
-                true       // signal
+                imm_data, // ✓ Now passes actual layer identification
+                signal    // signal
             );
 
             if (!success)
@@ -359,6 +363,9 @@ private:
     RDMAEngine *rdma_engine_;
     RdmaContext *ctx_ = nullptr;
     std::map<std::string, RegisteredRegion> registered_regions_;
+
+    std::atomic<uint64_t> write_counter_{0};
+    const int cq_batch_size_ = 8; // tune: signal 1 per 8 writes
 
     Config create_default_config()
     {

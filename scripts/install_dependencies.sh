@@ -29,10 +29,6 @@ sudo apt-get install -y \
     build-essential \
     cmake \
     git \
-    pkg-config \
-    autoconf \
-    automake \
-    libtool \
     pybind11-dev
 
 # ============================================
@@ -44,11 +40,7 @@ sudo apt-get install -y \
     libibverbs-dev \
     librdmacm-dev \
     ibverbs-utils \
-    rdma-core \
-    perftest \
-    infiniband-diags \
-    opensm \
-    ibutils
+    rdma-core
 
 echo "  Checking InfiniBand devices..."
 if command -v ibv_devices &> /dev/null; then
@@ -67,20 +59,44 @@ if [ "${USE_GPU:-true}" = "true" ]; then
     echo "[4/10] Checking CUDA installation (USE_GPU=true)..."
 
     if command -v nvidia-smi &> /dev/null; then
-        echo "  CUDA appears to be installed:"
+        echo "  NVIDIA driver appears to be installed:"
         nvidia-smi --query-gpu=name,driver_version,cuda_version --format=csv,noheader | head -1
     else
-        echo "  WARNING: CUDA not detected. Installing NVIDIA drivers and CUDA toolkit..."
+        echo "  WARNING: CUDA not detected. Installing NVIDIA drivers..."
 
-        # Install NVIDIA server driver from Ubuntu repos (supports CUDA 12.x)
-        echo "  Installing NVIDIA server driver 565..."
-        sudo apt-get install -y nvidia-driver-565-server
+        # Install NVIDIA server driver 570
+        echo "  Installing NVIDIA server driver 570..."
+        sudo apt-get install -y nvidia-driver-570-server
 
-        # Install CUDA toolkit from Ubuntu repos
-        echo "  Installing CUDA toolkit..."
+        echo "  NVIDIA driver installed. REBOOT REQUIRED for driver to take effect."
+    fi
+
+    # Check and install CUDA toolkit (nvcc)
+    echo ""
+    echo "  Checking CUDA toolkit (nvcc)..."
+    if command -v nvcc &> /dev/null; then
+        echo "  CUDA toolkit already installed:"
+        nvcc --version | grep "release"
+    else
+        echo "  Installing CUDA toolkit (nvidia-cuda-toolkit)..."
         sudo apt-get install -y nvidia-cuda-toolkit
 
-        echo "  CUDA installed. REBOOT REQUIRED for driver to take effect."
+        if command -v nvcc &> /dev/null; then
+            echo "  ✓ CUDA toolkit installed successfully:"
+            nvcc --version | grep "release"
+        else
+            echo "  ⚠ CUDA toolkit installation may have failed"
+        fi
+    fi
+
+    # Add CUDA to PATH permanently
+    echo ""
+    echo "  Configuring CUDA PATH..."
+    if ! grep -q "/usr/local/cuda/bin" ~/.bashrc 2>/dev/null; then
+        echo 'export PATH=/usr/local/cuda/bin:/usr/bin:$PATH' >> ~/.bashrc
+        echo "  ✓ Added CUDA to ~/.bashrc"
+    else
+        echo "  ✓ CUDA already in ~/.bashrc"
     fi
 else
     echo "[4/10] Skipping CUDA/GPU driver installation (USE_GPU=false, using MooncakeConnector)"
@@ -186,36 +202,11 @@ source "${VENV_DIR}/bin/activate"
 echo "  Upgrading pip..."
 pip install --upgrade pip setuptools wheel
 
-# Install PyTorch with CUDA support
-if [ "${USE_GPU:-true}" = "true" ]; then
-    echo "  Installing PyTorch with CUDA 12.1 (USE_GPU=true)..."
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-else
-    echo "  Installing PyTorch (CPU-only, USE_GPU=false)..."
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-fi
+# Install vLLM (will install PyTorch and other dependencies automatically)
+echo "  Installing vLLM..."
+pip install vllm
 
-# Install vLLM and common dependencies
-echo "  Installing vLLM and dependencies..."
-pip install \
-    vllm \
-    transformers \
-    accelerate \
-    pybind11 \
-    ninja \
-    packaging \
-    ray \
-    sentencepiece
-
-# Install backend-specific packages
-if [ "${USE_GPU:-true}" = "true" ]; then
-    echo "  GPUDirect RDMA path: no additional Python packages required"
-else
-    echo "  MooncakeConnector path: installing mooncake-transfer-engine..."
-    pip install mooncake-transfer-engine
-fi
-
-echo "  ✓ Python packages installed in virtual environment: ${VENV_DIR}"
+echo "  ✓ vLLM installed in virtual environment: ${VENV_DIR}"
 echo "  To use: source ${VENV_DIR}/bin/activate"
 
 # ============================================
@@ -226,8 +217,7 @@ echo "[7/10] Installing additional libraries..."
 
 sudo apt-get install -y \
     libcurl4-openssl-dev \
-    nlohmann-json3-dev \
-    libyaml-cpp-dev
+    nlohmann-json3-dev
 
 # ============================================
 # 8. RDMA System Configuration
@@ -279,13 +269,15 @@ else
     echo "  OpenSM already running"
 fi
 
-# Bring up IB interface
-for iface in $(ls /sys/class/infiniband/*/device/net/ 2>/dev/null || true); do
-    if [ -n "$iface" ]; then
-        echo "  Bringing up InfiniBand interface: $iface"
-        sudo ip link set $iface up || true
-    fi
-done
+# Bring up IB interface (if present)
+if [ -d "/sys/class/infiniband" ]; then
+    for iface in $(ls /sys/class/infiniband/*/device/net/ 2>/dev/null || true); do
+        if [ -n "$iface" ]; then
+            echo "  Bringing up InfiniBand interface: $iface"
+            sudo ip link set $iface up || true
+        fi
+    done
+fi
 
 # ============================================
 # 10. Verification
@@ -339,12 +331,24 @@ if [ "${USE_GPU:-true}" = "true" ]; then
     echo "=========================================="
 
     if command -v nvidia-smi &> /dev/null; then
-        nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=table
-        echo ""
-        echo "  CUDA version:"
-        nvidia-smi | grep "CUDA Version" || nvcc --version | grep "release"
+        # Try simple command first
+        if nvidia-smi -L &> /dev/null; then
+            echo "  GPU devices:"
+            nvidia-smi -L
+        else
+            echo "  ⚠ nvidia-smi found but driver not loaded (reboot required)"
+        fi
     else
-        echo "  NVIDIA driver not loaded (reboot may be required)"
+        echo "  ⚠ NVIDIA driver not loaded (reboot required)"
+    fi
+
+    echo ""
+    echo "  CUDA Toolkit (nvcc):"
+    if command -v nvcc &> /dev/null; then
+        echo "    ✓ nvcc installed:"
+        nvcc --version | grep "release" | sed 's/^/    /'
+    else
+        echo "    ✗ nvcc NOT FOUND (installation may have failed)"
     fi
 
     echo ""

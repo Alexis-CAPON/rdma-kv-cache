@@ -59,7 +59,7 @@ void WorkerOrchestrator::process_event(Event &event)
         handle_ready(event.client_fd, event.message.get());
         break;
 
-        case MessageType::REQUEST_FAILED:
+    case MessageType::REQUEST_FAILED:
         handle_request_failed(event.client_fd, event.message.get());
         break;
 
@@ -143,6 +143,18 @@ void WorkerOrchestrator::handle_client_request(int client_fd, Message *msg)
 
     // Send an ASSIGN_REQUEST message to the selected prefill node with the request details and the selected decode node info
     Message assign_msg = Message::create_assign_request(config_.orchestrator_id, request_info);
+
+    Message decode_prep_msg = Message::create_prepare_decode_slot(config_.orchestrator_id, request_info);
+
+    auto decode_node_fd = node_registry_.get_node_fd(routing->decode_node.node_id);
+    if (!decode_node_fd)
+    {
+        Logger::error("Failed to find decode node fd for node_id=" + routing->decode_node.node_id);
+        // Free slot on error
+        request_router_.free_slot(request_info.request_id);
+        return;
+    }
+    send_server_response(decode_node_fd.value(), decode_prep_msg);
 
     auto prefill_fd = node_registry_.get_node_fd(routing->prefill_node.node_id);
     if (!prefill_fd)

@@ -408,6 +408,16 @@ Message Message::create_error(const std::string &error_msg)
     return msg;
 }
 
+Message Message::create_prepare_decode_slot(const std::string source_node_id, const RequestInfo &request_info)
+{
+    Message msg;
+    msg.type = MessageType::PREPARE_DECODE_SLOT;
+    msg.source_node_id = source_node_id;
+    msg.timestamp = now_ns();
+    msg.request_info = request_info;
+    return msg;
+}
+
 // ── Serialization (free functions) ───────────────────────────────────────────
 // Wire format (in order):
 //   type (1B) | status (1B) | transaction_id (8B) | timestamp (8B)

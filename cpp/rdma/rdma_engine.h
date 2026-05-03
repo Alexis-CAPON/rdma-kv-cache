@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include <atomic>
 
 /**
  * RDMAEngine - Manages GPUDirect RDMA for KV cache transfer
@@ -55,6 +56,8 @@ public:
      */
     bool is_initialized() const { return initialized_; }
 
+    bool is_rdma_fatal() const { return rdma_fatal_error_.load(); }
+
     const NodeInfo &get_node_info() const { return node_info_; }
 
     // ========================================
@@ -81,7 +84,7 @@ public:
         const std::string &peer_id,
         uint64_t local_addr, // Absolute address (vLLM memory)
         uint32_t local_lkey, // lkey from vLLM's MR
-        size_t dst_offset,
+        uint64_t dst_offset,
         size_t length,
         uint32_t imm_data,
         bool signal);
@@ -154,6 +157,10 @@ private:
     Config &config_;
     NodeInfo &node_info_;
     std::atomic<bool> initialized_;
+
+    int recv_wr_replenish_failures_{0}; // reset on success, incremented on failure
+    static constexpr int MAX_REPLENISH_FAILURES = 5;
+    std::atomic<bool> rdma_fatal_error_{false};
 
     // ── GPUDirect RDMA Context ───────────────────────────────────────────────
     RdmaContext rdma_ctx_; // Main RDMA context for this node's GPU

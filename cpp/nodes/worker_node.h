@@ -56,6 +56,7 @@ private:
     // Only decode nodes
     void handle_prefill_complete(int server_fd, Message *msg);
     void handle_kv_transfer_complete(int server_fd, Message *msg);
+    void handle_prepare_decode_slot(int server_fd, Message *msg);
 
     // ========================================
     // Response Handling

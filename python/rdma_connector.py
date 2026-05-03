@@ -615,21 +615,17 @@ class RDMAConnector(ExampleConnector):
                   break
 
           if slot_id is None or slot_base_offset is None:
-              # Fallback to old hash-based method for backward compatibility
-              logger.warning(
-                  f"Request missing slot_id/slot_base_offset, using legacy hash-based offset. "
-                  f"This should not happen in production!"
-              )
-              token_bytes = token_ids.numpy().tobytes()
-              if mm_hashes:
-                  mm_str = "-".join(mm_hashes)
-                  token_bytes += mm_str.encode("utf-8")
-
-              request_hash = safe_hash(token_bytes, usedforsecurity=False).hexdigest()
-              offset_base = int(request_hash[:16], 16) % (1 << 32)  # Within 4GB
-              layer_id = self._extract_layer_id(layer_name)
-              layer_offset = layer_id * self._layer_size
-              return offset_base + layer_offset
+                # Fallback to old hash-based method for backward compatibility
+                logger.error(
+                    f"Request missing slot_id/slot_base_offset, using legacy hash-based offset. "
+                    f"This should not happen in production!"
+                )
+                # Throw an error
+                raise RuntimeError(
+                    f"Request missing slot_id or slot_base_offset for token_ids {token_ids}. "
+                    f"Cannot calculate RDMA offset without this information. "
+                    f"Please ensure the orchestrator assigns slot_id and slot_base_offset to each request."
+                )
 
           # NEW CALCULATION: Layer-based offset
           # Base offset for this request's slot

@@ -1,17 +1,12 @@
 cmake_minimum_required(VERSION 3.18)
 
-# Build options (must be declared before project() so the CUDA language is
-# only requested when GPUDirect support is actually needed)
+# Build options
 option(ENABLE_GPU_DIRECT "Enable GPU Direct RDMA" ON)
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_BENCHMARKS "Build benchmarks" ON)
 
-if(ENABLE_GPU_DIRECT)
-    project(rdma_kv_cache CXX CUDA)
-    set(CMAKE_CUDA_STANDARD 17)
-else()
-    project(rdma_kv_cache CXX)
-endif()
+# Always start with CXX only - we'll enable CUDA later if needed
+project(rdma_kv_cache CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,10 +23,29 @@ else()
 endif()
 
 if(ENABLE_GPU_DIRECT)
-    find_package(CUDA REQUIRED)
-    message(STATUS "GPUDirect RDMA enabled")
+    # Try to enable CUDA language
+    include(CheckLanguage)
+    check_language(CUDA)
+
+    if(CMAKE_CUDA_COMPILER)
+        enable_language(CUDA)
+        set(CMAKE_CUDA_STANDARD 17)
+
+        # Find CUDA Toolkit
+        find_package(CUDAToolkit REQUIRED)
+        message(STATUS "GPUDirect RDMA enabled")
+        message(STATUS "CUDA Toolkit version: ${CUDAToolkit_VERSION}")
+        set(CUDA_AVAILABLE TRUE)
+    else()
+        message(WARNING "CUDA compiler not found. ENABLE_GPU_DIRECT=ON but nvcc is not available.")
+        message(WARNING "Falling back to CPU-only RDMA mode.")
+        message(WARNING "To fix: Install CUDA toolkit or set -DENABLE_GPU_DIRECT=OFF")
+        set(ENABLE_GPU_DIRECT OFF)
+        set(CUDA_AVAILABLE FALSE)
+    endif()
 else()
     message(STATUS "GPUDirect RDMA disabled — CPU-only RDMA path selected")
+    set(CUDA_AVAILABLE FALSE)
 endif()
 
 # RDMA libraries

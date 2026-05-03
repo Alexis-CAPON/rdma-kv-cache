@@ -164,22 +164,26 @@ void RDMAEngine::shutdown()
     if (!initialized_)
         return;
 
-    Logger::info("RDMAEngine: Shutting down");
-
-    // Destroy all QPs
+    // Destroy QPs; drain all even if some fail
     for (auto &[peer_id, qp] : peer_qps_)
     {
-        if (qp)
+        if (!qp)
+            continue;
+        int ret = ibv_destroy_qp(qp);
+        if (ret != 0)
         {
-            ibv_destroy_qp(qp);
+            Logger::error("RDMAEngine: ibv_destroy_qp failed for peer " + peer_id +
+                          ": " + std::string(strerror(errno)));
+            // Log and continue — we still need to try destroying the rest
+        }
+        else
+        {
             Logger::debug("RDMAEngine: Destroyed QP for peer " + peer_id);
         }
     }
-    peer_qps_.clear();
+    peer_qps_.clear(); // ← clear only AFTER all destroy attempts
 
-    // Destroy the rest of the RDMA context
     destroy_rdma_context(rdma_ctx_);
-
     initialized_ = false;
     Logger::info("RDMAEngine: Shutdown complete");
 }
@@ -376,10 +380,26 @@ int RDMAEngine::poll_recv_cq(std::vector<ibv_wc> &wcs, int max_count)
             Logger::error("RDMAEngine: Failed to replenish " + std::to_string(n) + " recv WRs after poll");
             // Non-fatal: continue processing current completions
             // Future transfers may stall due to RNR NAK if queue depletes
+            ++recv_wr_replenish_failures_;
+            Logger::error("RDMAEngine: Failed to replenish " + std::to_string(n) +
+                          " recv WRs after poll (failure #" +
+                          std::to_string(recv_wr_replenish_failures_) + "/" +
+                          std::to_string(MAX_REPLENISH_FAILURES) + ")");
+            if (recv_wr_replenish_failures_ >= MAX_REPLENISH_FAILURES)
+            {
+                Logger::error("RDMAEngine: FATAL — recv WR queue will drain. "
+                              "All future WRITE_WITH_IMM transfers will stall with RNR NAK. "
+                              "Marking engine as fatal; poll loop must stop.");
+                rdma_fatal_error_.store(true);
+                return -1;
+            }
         }
         else
         {
             Logger::debug("RDMAEngine: Replenished " + std::to_string(n) + " recv WRs (maintaining recv queue)");
+            recv_wr_replenish_failures_ = 0;
+            Logger::debug("RDMAEngine: Replenished " + std::to_string(n) +
+                          " recv WRs (maintaining recv queue)");
         }
     }
 

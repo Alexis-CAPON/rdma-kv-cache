@@ -95,11 +95,14 @@ VLLM_PATH="/users/${USERNAME}/vllm"
 RSYNC_EXCLUDE="--exclude='build/' --exclude='logs/' --exclude='.git/' --exclude='vllm/' --exclude='*.o' --exclude='*.a'"
 
 # Build command on remote server
-# Conditionally enable/disable GPU Direct based on USE_GPU setting
+# The CMake config will auto-detect CUDA availability and fallback to CPU-only if needed
 if [ "$USE_GPU" = "true" ]; then
-    REMOTE_BUILD_CMD="cd ${REMOTE_DIR} && mkdir -p build && cd build && cmake .. -DENABLE_GPU_DIRECT=ON && make -j\$(nproc)"
+    # Try GPU mode first - CMake will auto-fallback to CPU if CUDA not available
+    # Ensure CUDA is in PATH for nvcc detection
+    REMOTE_BUILD_CMD="cd ${REMOTE_DIR} && rm -rf build && mkdir -p build && cd build && export PATH=/usr/local/cuda/bin:/usr/bin:\$PATH && cmake .. -DENABLE_GPU_DIRECT=ON && make -j\$(nproc)"
 else
-    REMOTE_BUILD_CMD="cd ${REMOTE_DIR} && mkdir -p build && cd build && cmake .. -DENABLE_GPU_DIRECT=OFF && make -j\$(nproc)"
+    # Force CPU-only mode
+    REMOTE_BUILD_CMD="cd ${REMOTE_DIR} && rm -rf build && mkdir -p build && cd build && cmake .. -DENABLE_GPU_DIRECT=OFF && make -j\$(nproc)"
 fi
 
 # vLLM build command (if needed)

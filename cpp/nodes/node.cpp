@@ -45,6 +45,13 @@ bool Node::start()
 {
     Logger::info("Starting Node...");
 
+    if (config_.memory.kv_buffer_mb < config_.memory.required_mb)
+    {
+        Logger::error("kv_buffer_mb (" + std::to_string(config_.memory.kv_buffer_mb) +
+                      ") < required (" + std::to_string(config_.memory.required_mb) + ")");
+        return false;
+    }
+
     // ========================================
     // 1. Bind and Listen on TCP Servers
     // ========================================
@@ -314,6 +321,17 @@ void Node::rdma_poll_loop()
 
     while (rdma_poll_running_)
     {
+        // Exit immediately if the RDMA engine has entered a fatal state
+        // (e.g. recv WR replenishment failed too many times — the recv queue
+        // is about to drain and no further transfers can complete cleanly).
+        if (rdma_engine_.is_rdma_fatal())
+        {
+            Logger::error("Node: RDMA engine fatal error detected — stopping poll loop. "
+                          "Node must be restarted to recover.");
+            rdma_poll_running_ = false;
+            break;
+        }
+
         int n = rdma_engine_.poll_recv_cq(wcs, 32);
 
         if (n <= 0)
@@ -344,6 +362,20 @@ void Node::rdma_poll_loop()
 
             if (all_done)
             {
+
+#ifdef ENABLE_GPU_DIRECT
+                // Fence: ensure all RDMA DMA writes to GPU HBM2 are visible
+                // to CUDA kernels before we tell vLLM to start decode.
+                cudaError_t fence_err = cudaDeviceSynchronize();
+                if (fence_err != cudaSuccess)
+                {
+                    Logger::error("RDMA poll: cudaDeviceSynchronize failed: " +
+                                  std::string(cudaGetErrorString(fence_err)));
+                    // Do NOT push the event — decode would read garbage data.
+                    continue;
+                }
+#endif
+
                 // All layers received - push KV_TRANSFER_COMPLETE event to queue
                 Logger::info("All layers received for request " + request_id + " — triggering decode");
 

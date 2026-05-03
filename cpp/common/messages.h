@@ -43,6 +43,8 @@ struct Message
     static Message create_broadcast_member_info(const std::string source_node_id, std::vector<NodeInfo> membership_list_info);
     static Message create_rdma_ready(const std::string source_node_id);
 
+    static Message create_prepare_decode_slot(const std::string source_node_id, const RequestInfo &request_info);
+
     static Message create_assign_request(const std::string source_node_id, const RequestInfo &request_info);
     static Message prefill_complete(const std::string source_node_id, const RequestInfo &request_info);
     static Message decode_complete(const std::string source_node_id, const RequestInfo &request_info, const std::string &response_text);

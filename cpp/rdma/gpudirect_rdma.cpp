@@ -28,6 +28,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <arpa/inet.h>
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Internal helpers
