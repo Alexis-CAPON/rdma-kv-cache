@@ -155,7 +155,7 @@ ssh Alexis@clgpu013.clemson.cloudlab.us 'tail -f ~/rdma-kv-cache/logs/decode-00-
 Edit `scripts/deploy_config.sh`:
 
 ```bash
-MODEL_NAME="meta-llama/Llama-2-7b-hf"
+MODEL_NAME="Qwen/Qwen3-8B"
 GPU_MEMORY_UTILIZATION=0.9
 MAX_MODEL_LEN=4096
 ```
