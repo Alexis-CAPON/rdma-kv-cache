@@ -237,6 +237,14 @@ void WorkerOrchestrator::handle_process_rdma_registration(int server_fd, Message
     // Update the node registry with the received RDMA registration info
     node_registry_.add_node(received_node_info);
 
+    // Now that we know the node_id, record the fd → node_id mapping so the
+    // orchestrator can send messages back to this node by node_id.
+    node_registry_.add_node_fd(received_node_info.node_id, server_fd);
+
+    // Register the node in the RDMA exchange tracker so RDMA_READY messages
+    // from this node are accepted later.
+    rdma_exchange_tracker_.register_node(received_node_info.node_id, received_node_info.role);
+
     // Check if we have received RDMA registration from all expected nodes
     int total_registered_nodes = node_registry_.get_total_registered_nodes();
 

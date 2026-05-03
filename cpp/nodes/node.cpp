@@ -39,6 +39,7 @@ Node::Node(Config config)
 
     // Populating node_info_ with config
     node_info_.node_id = config_.node_id;
+    node_info_.role = (config_.role == "prefill") ? NodeRole::PREFILL : NodeRole::DECODE;
 }
 
 bool Node::start()

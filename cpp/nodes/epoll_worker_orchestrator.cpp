@@ -145,8 +145,8 @@ void EpollWorkerOrchestrator::handle_server_accept()
             break;
         }
 
-        // We add the connection to the registry
-        node_registry_.add_node_fd(new_conn->get_node_host(), new_conn->get_fd());
+        // We will record the node_id → fd mapping only after the
+        // RDMA_PROCESS_REGISTRATION message arrives and we know the node_id.
 
         int fd = new_conn->get_fd();
         Logger::info("EpollWorker: accepted new server connection fd=" + std::to_string(fd));

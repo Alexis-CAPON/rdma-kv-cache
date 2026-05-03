@@ -57,10 +57,10 @@ cat > "${CONFIGS_DIR}/orchestrator.yaml" <<EOF
 
 host: "${ORCHESTRATOR_HOST}"
 client_socket_port: ${ORCHESTRATOR_PORT}
-server_socket_port: ${ORCHESTRATOR_PORT}
+server_socket_port: ${ORCHESTRATOR_NODE_PORT}
 
 orchestrator_host: "${ORCHESTRATOR_HOST}"
-orchestrator_port: ${ORCHESTRATOR_PORT}
+orchestrator_port: ${ORCHESTRATOR_NODE_PORT}
 
 # Cluster settings
 replication_factor: ${REPLICATION_FACTOR}
@@ -182,7 +182,7 @@ client_socket_port: ${CLIENT_PORT}
 server_socket_port: ${SERVER_PORT}
 
 orchestrator_host: "${ORCHESTRATOR_HOST}"
-orchestrator_port: ${ORCHESTRATOR_PORT}
+orchestrator_port: ${ORCHESTRATOR_NODE_PORT}
 
 # vLLM configuration
 vllm_port: ${VLLM_PORT}
@@ -342,7 +342,7 @@ client_socket_port: ${CLIENT_PORT}
 server_socket_port: ${SERVER_PORT}
 
 orchestrator_host: "${ORCHESTRATOR_HOST}"
-orchestrator_port: ${ORCHESTRATOR_PORT}
+orchestrator_port: ${ORCHESTRATOR_NODE_PORT}
 
 # vLLM configuration
 vllm_port: ${VLLM_PORT}

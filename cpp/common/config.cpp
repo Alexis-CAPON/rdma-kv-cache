@@ -5,7 +5,8 @@
 
 std::string Config::generate_node_id(const std::string &host, uint16_t port)
 {
-    std::string key = host;
+    // Include both host and port so that nodes on the same machine get distinct IDs
+    std::string key = host + ":" + std::to_string(port);
 
     // FNV-1a 64-bit hash (no collisions in practice)
     uint64_t hash = 14695981039346656037ULL;
@@ -50,7 +51,7 @@ Config Config::fromFile(const std::string &path)
     config.number_of_keys_hashtable = yaml["number_of_keys_hashtable"] ? yaml["number_of_keys_hashtable"].as<uint32_t>() : 10000;
     config.size_local_buffer = yaml["size_local_buffer"] ? yaml["size_local_buffer"].as<size_t>() : 1024;
     config.client_event_queue_size = yaml["event_queue_size"] ? yaml["event_queue_size"].as<size_t>() : 1000;
-    // config.monitoring_event_queue_size = yaml["event_queue_size"] ? yaml["event_queue_size"].as<size_t>() : 1000;  // Field doesn't exist in Config class
+    config.orchestrator_event_queue_size = config.client_event_queue_size;
     config.worker_pool_size = yaml["worker_pool_size"] ? yaml["worker_pool_size"].as<uint32_t>() : 4;
 
     config.orchestrator_host = yaml["orchestrator_host"].as<std::string>();
@@ -102,6 +103,12 @@ Config Config::fromFile(const std::string &path)
         config.memory.mr_relaxed_ordering = mem["mr_relaxed_ordering"] ? mem["mr_relaxed_ordering"].as<bool>() : true;
         config.memory.max_concurrent_requests = mem["max_concurrent_requests"] ? mem["max_concurrent_requests"].as<int>() : 8;
     }
+
+    // Compute the minimum required KV buffer size from actual config values:
+    //   num_layers * layer_size_mb * max_concurrent_requests
+    config.memory.required_mb = static_cast<size_t>(config.num_layers) *
+                                 config.memory.layer_size_mb *
+                                 static_cast<size_t>(config.memory.max_concurrent_requests);
 
     // Orchestrator configuration
     if (yaml["orchestrator"])
