@@ -17,6 +17,7 @@ import node_accessor
 import torch
 
 from vllm.config import VllmConfig
+from vllm.distributed.kv_transfer.kv_connector.v1.base import SupportsHMA
 from vllm.distributed.kv_transfer.kv_connector.v1.example_connector import (
       ExampleConnector,
       ExampleConnectorMetadata,
@@ -38,11 +39,12 @@ if TYPE_CHECKING:
       from vllm.forward_context import ForwardContext
       from vllm.v1.kv_cache_interface import KVCacheConfig
       from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorRole
+      from vllm.v1.request import Request
 
 logger = init_logger(__name__)
 
 
-class RDMAConnector(ExampleConnector):
+class RDMAConnector(SupportsHMA, ExampleConnector):
       """
       RDMA-based KV connector for vLLM disaggregated inference
       
@@ -66,19 +68,19 @@ class RDMAConnector(ExampleConnector):
           super().__init__(vllm_config, role, kv_cache_config)
 
           # RDMA configuration
-          # Normalize role: vLLM passes "kv_producer"/"kv_consumer" via KVConnectorRole,
-          # but extra_config may also carry an explicit "role" override ("send"/"recv" or
-          # "kv_producer"/"kv_consumer").  Prefer the vLLM-standard KVConnectorRole when
-          # available, then fall back to extra_config.
-          _role_raw = self._kv_transfer_config.get_from_extra_config("role", None)
-          if _role_raw is not None:
-              # Normalise legacy "send"/"recv" to the internal "send"/"recv" convention
+          # Derive the send/recv role from KVTransferConfig.kv_role
+          # ('kv_producer' for prefill/send, 'kv_consumer' for decode/recv).
+          # An explicit 'role' key in extra_config overrides this for backward
+          # compatibility and accepts both old ("send"/"recv") and new
+          # ("kv_producer"/"kv_consumer") spellings.
+          _role_override = self._kv_transfer_config.get_from_extra_config("role", None)
+          if _role_override is not None:
               _alias = {"kv_producer": "send", "kv_consumer": "recv"}
-              self._role_str = _alias.get(_role_raw, _role_raw)
+              self._role_str = _alias.get(_role_override, _role_override)
           else:
-              # Derive from the KVConnectorRole enum passed by vLLM
-              from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorRole
-              self._role_str = "send" if role == KVConnectorRole.SENDER else "recv"
+              # kv_role is 'kv_producer' or 'kv_consumer' in KVTransferConfig
+              _kv_role = self._kv_transfer_config.kv_role
+              self._role_str = "send" if _kv_role == "kv_producer" else "recv"
           self._rdma_device = self._kv_transfer_config.get_from_extra_config(
               "rdma_device", "mlx5_0"
           )
@@ -721,6 +723,25 @@ class RDMAConnector(ExampleConnector):
                   logger.error(f"RDMA wait failed: {e}")
           else:
               logger.info("Simulated RDMA wait")
+
+      # ========================================================================
+      # SupportsHMA: Hybrid Memory Allocator support
+      # ========================================================================
+
+      def request_finished_all_groups(
+          self,
+          request: "Request",
+          block_ids: tuple[list[int], ...],
+      ) -> tuple[bool, dict[str, Any] | None]:
+          """
+          Called when a request has finished for all KV cache groups.
+
+          For this connector, all RDMA writes are flushed synchronously inside
+          wait_for_save() before the forward pass exits, so there is nothing
+          left to do asynchronously here.  We return (False, None) to let vLLM
+          free the blocks immediately.
+          """
+          return False, None
 
 
   # ============================================================================

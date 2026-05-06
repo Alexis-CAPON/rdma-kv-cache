@@ -253,7 +253,8 @@ bool Node::start_vllm_server()
         cmd = activate_and_run + "python -m vllm.entrypoints.openai.api_server "
               "--model '" + config_.model_name + "' "
               "--port " + std::to_string(config_.vllm_port) + " "
-              "--kv-transfer-config '" + kv_transfer_cfg + "'";
+              "--kv-transfer-config '" + kv_transfer_cfg + "' "
+              "--no-disable-hybrid-kv-cache-manager";
     }
     else
     {
@@ -303,6 +304,7 @@ bool Node::start_vllm_server()
               "--model '" + config_.model_name + "' "
               "--port " + std::to_string(config_.vllm_port) + " "
               "--kv-transfer-config '" + kv_transfer_cfg + "' "
+              "--no-disable-hybrid-kv-cache-manager "
               "--device cpu";
     }
 
