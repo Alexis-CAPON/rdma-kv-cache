@@ -8,6 +8,7 @@
 #include "cpp/common/logger.h"
 #include "cpp/nodes/node.h"
 #include <yaml-cpp/yaml.h>
+#include "cpp/bindings/node_accessor.h"
 
 using namespace std;
 
@@ -52,6 +53,9 @@ int main(int argc, char *argv[])
         Config config = Config::fromFile(config_path);
 
         Node decode_node(config);
+
+        // Register node with accessor so vLLM's Python connector can access RDMA engine
+        set_current_node(&decode_node);
 
         // Start all components
         if (!decode_node.start())

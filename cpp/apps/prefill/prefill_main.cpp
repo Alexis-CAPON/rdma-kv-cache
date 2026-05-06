@@ -54,6 +54,9 @@ int main(int argc, char *argv[])
 
         Node prefill_node(config);
 
+        // Register node with accessor so vLLM's Python connector can access RDMA engine
+        set_current_node(&prefill_node);
+
         // Start all components
         if (!prefill_node.start())
         {

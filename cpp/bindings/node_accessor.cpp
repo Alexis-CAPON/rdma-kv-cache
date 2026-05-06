@@ -12,6 +12,10 @@ PYBIND11_MODULE(node_accessor, m)
 {
     m.doc() = "Node accessor for accessing RDMA engine from vLLM Python connector";
 
+    // Register RDMAEngine as an opaque type so pybind11 can pass pointers around
+    // We don't expose any methods - this is just for pointer passing
+    py::class_<RDMAEngine>(m, "RDMAEngine");
+
     m.def("set_current_node", &set_current_node,
           py::arg("node"),
           "Set the current node instance");
