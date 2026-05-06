@@ -74,6 +74,7 @@ public:
     std::string orchestrator_id;
     uint32_t vllm_port;
     std::string model_name;
+    float gpu_memory_utilization = 0.9f; // vLLM GPU memory utilization (0.0-1.0)
 
     uint32_t num_layers;
 

@@ -106,48 +106,7 @@ echo ""
 # Step 1: Install Dependencies on Remote Nodes
 # ============================================
 
-log_step "Installing dependencies on all nodes (this may take 15-30 minutes)..."
 
-INSTALL_PIDS=()
-INSTALL_LOGS=()
-
-for NODE in "${DEPLOY_NODES[@]}"; do
-    HOST=$(get_full_hostname "$NODE")
-    LOG_FILE="/tmp/install_$(echo "${NODE}" | tr -cs 'a-zA-Z0-9' '_').log"
-    INSTALL_LOGS+=("$LOG_FILE")
-
-    log_info "Copying install script to ${HOST}..."
-    scp "${SSH_OPTS[@]}" \
-        "${SCRIPT_DIR}/install_dependencies.sh" \
-        "${USERNAME}@${HOST}:/tmp/install_dependencies.sh" 2>/dev/null
-
-    log_info "Starting installation on ${HOST}..."
-    ssh "${SSH_OPTS[@]}" "${USERNAME}@${HOST}" \
-        "chmod +x /tmp/install_dependencies.sh && \
-         USE_GPU=\"${USE_GPU}\" bash /tmp/install_dependencies.sh 2>&1" \
-        > "$LOG_FILE" 2>&1 &
-
-    INSTALL_PIDS+=($!)
-    sleep 1
-done
-
-# Wait for all installations to complete
-for i in "${!INSTALL_PIDS[@]}"; do
-    pid="${INSTALL_PIDS[$i]}"
-    NODE="${DEPLOY_NODES[$i]}"
-    HOST=$(get_full_hostname "$NODE")
-    LOG_FILE="${INSTALL_LOGS[$i]}"
-
-    if wait $pid; then
-        log_success "Dependencies installed on ${HOST}"
-    else
-        log_error "Dependency installation failed on ${HOST}"
-        log_error "Check log: ${LOG_FILE}"
-        exit 1
-    fi
-done
-
-echo ""
 
 # ============================================
 # Step 2: Sync Code to Remote Nodes

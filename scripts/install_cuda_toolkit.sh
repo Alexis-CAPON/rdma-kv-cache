@@ -15,7 +15,7 @@ echo "=========================================="
 echo ""
 
 # Nodes to install on (adjust as needed)
-TARGET_NODES=("clgpu013.clemson.cloudlab.us")
+TARGET_NODES=("d8545-10s10501.wisc.cloudlab.us" "d8545-10s10305.wisc.cloudlab.us" "d8545-10s10301.wisc.cloudlab.us")
 
 for NODE in "${TARGET_NODES[@]}"; do
     HOST=$(get_full_hostname "$NODE")

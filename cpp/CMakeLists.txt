@@ -128,7 +128,7 @@ add_library(nodes STATIC
     nodes/worker_pool_orchestrator.cpp
     nodes/worker_pool_node.cpp
     nodes/request_tracker_layer.cpp
-    bindings/node_accessor.cpp
+    nodes/node_accessor.cpp
 )
 
 # Enable Position Independent Code for use in Python bindings

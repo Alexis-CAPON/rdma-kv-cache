@@ -245,14 +245,21 @@ bool Node::start_vllm_server()
     if (config_.use_gpu)
     {
         // GPUDirect RDMA path: use our custom RDMAConnector.
-        // Referencing the full "module.ClassName" path avoids relying on the
-        // vllm.general_plugins entry-point being loaded before the first use.
+        // kv_connector_module_path tells vLLM where to find the connector class.
+        // PYTHONPATH makes both rdma_connector.py and the C++ bindings importable.
+        std::string project_root = std::string(getenv("HOME")) + "/rdma-kv-cache";
         std::string kv_transfer_cfg =
-            make_kv_transfer_cfg("rdma_connector.RDMAConnector", kv_role);
+            "{\"kv_connector\":\"RDMAConnector\","
+            "\"kv_role\":\"" + kv_role + "\","
+            "\"kv_connector_module_path\":\"rdma_connector\"}";
 
-        cmd = activate_and_run + "python -m vllm.entrypoints.openai.api_server "
+        cmd = activate_and_run +
+              "PYTHONPATH=" + project_root + "/python:" +
+              project_root + "/build/cpp/bindings:$PYTHONPATH "
+              "python -m vllm.entrypoints.openai.api_server "
               "--model '" + config_.model_name + "' "
               "--port " + std::to_string(config_.vllm_port) + " "
+              "--gpu-memory-utilization " + std::to_string(config_.gpu_memory_utilization) + " "
               "--kv-transfer-config '" + kv_transfer_cfg + "' "
               "--no-disable-hybrid-kv-cache-manager";
     }
