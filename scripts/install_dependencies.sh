@@ -29,7 +29,8 @@ sudo apt-get install -y \
     build-essential \
     cmake \
     git \
-    pybind11-dev
+    pybind11-dev \
+    libyaml-cpp-dev
 
 # ============================================
 # 3. RDMA/InfiniBand Core Libraries

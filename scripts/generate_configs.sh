@@ -187,6 +187,7 @@ orchestrator_port: ${ORCHESTRATOR_NODE_PORT}
 # vLLM configuration
 vllm_port: ${VLLM_PORT}
 model_name: "${MODEL_NAME}"
+gpu_memory_utilization: ${GPU_MEMORY_UTILIZATION}
 
 # Cluster settings
 replication_factor: ${REPLICATION_FACTOR}
@@ -347,6 +348,7 @@ orchestrator_port: ${ORCHESTRATOR_NODE_PORT}
 # vLLM configuration
 vllm_port: ${VLLM_PORT}
 model_name: "${MODEL_NAME}"
+gpu_memory_utilization: ${GPU_MEMORY_UTILIZATION}
 
 # Cluster settings
 replication_factor: ${REPLICATION_FACTOR}

@@ -224,8 +224,8 @@ void Node::shutdown()
 
 bool Node::start_vllm_server()
 {
-    // Determine the KV connector role (prefill sends, decode receives)
-    std::string kv_role = (config_.role == "prefill") ? "send" : "recv";
+    // Determine the KV connector role (prefill produces, decode consumes)
+    std::string kv_role = (config_.role == "prefill") ? "kv_producer" : "kv_consumer";
 
     std::string cmd;
 
@@ -236,11 +236,24 @@ bool Node::start_vllm_server()
     if (config_.use_gpu)
     {
         // GPUDirect RDMA path: use our custom RDMAConnector
-        cmd = activate_and_run + "python -m vllm.entrypoints.openai.api_server "
+        // Build KV transfer config JSON with module path to our custom connector
+        std::string project_root = std::string(getenv("HOME")) + "/rdma-kv-cache";
+        std::string kv_transfer_config =
+            "'{\"kv_connector\": \"RDMAConnector\", "
+            "\"kv_role\": \"" + kv_role + "\", "
+            "\"kv_connector_module_path\": \"rdma_connector\"}'";
+
+        // Add python directory and build directory to PYTHONPATH
+        // - python/ contains rdma_connector.py
+        // - build/cpp/bindings contains node_accessor.so and rdma_bindings.so
+        cmd = activate_and_run +
+              "PYTHONPATH=" + project_root + "/python:" +
+              project_root + "/build/cpp/bindings:$PYTHONPATH "
+              "python -m vllm.entrypoints.openai.api_server "
               "--model '" + config_.model_name + "' "
               "--port " + std::to_string(config_.vllm_port) + " "
-              "--kv-connector rdma_connector "
-              "--kv-role " + kv_role;
+              "--gpu-memory-utilization " + std::to_string(config_.gpu_memory_utilization) + " "
+              "--kv-transfer-config " + kv_transfer_config;
     }
     else
     {
@@ -283,12 +296,16 @@ bool Node::start_vllm_server()
             }
         }
 
+        // Build KV transfer config JSON for Mooncake
+        std::string kv_transfer_config =
+            "'{\"kv_connector\": \"MooncakeConnector\", "
+            "\"kv_role\": \"" + kv_role + "\"}'";
+
         cmd = activate_and_run + "MOONCAKE_CONFIG_PATH=" + mooncake_cfg_path + " "
               "python -m vllm.entrypoints.openai.api_server "
               "--model '" + config_.model_name + "' "
               "--port " + std::to_string(config_.vllm_port) + " "
-              "--kv-connector MooncakeConnector "
-              "--kv-role " + kv_role + " "
+              "--kv-transfer-config " + kv_transfer_config + " "
               "--device cpu";
     }
 
