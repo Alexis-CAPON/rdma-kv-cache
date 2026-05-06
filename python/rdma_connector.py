@@ -66,7 +66,19 @@ class RDMAConnector(ExampleConnector):
           super().__init__(vllm_config, role, kv_cache_config)
 
           # RDMA configuration
-          self._role_str = self._kv_transfer_config.get_from_extra_config("role", "send")
+          # Normalize role: vLLM passes "kv_producer"/"kv_consumer" via KVConnectorRole,
+          # but extra_config may also carry an explicit "role" override ("send"/"recv" or
+          # "kv_producer"/"kv_consumer").  Prefer the vLLM-standard KVConnectorRole when
+          # available, then fall back to extra_config.
+          _role_raw = self._kv_transfer_config.get_from_extra_config("role", None)
+          if _role_raw is not None:
+              # Normalise legacy "send"/"recv" to the internal "send"/"recv" convention
+              _alias = {"kv_producer": "send", "kv_consumer": "recv"}
+              self._role_str = _alias.get(_role_raw, _role_raw)
+          else:
+              # Derive from the KVConnectorRole enum passed by vLLM
+              from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorRole
+              self._role_str = "send" if role == KVConnectorRole.SENDER else "recv"
           self._rdma_device = self._kv_transfer_config.get_from_extra_config(
               "rdma_device", "mlx5_0"
           )
@@ -722,3 +734,28 @@ def create_rdma_connector(
   ) -> RDMAConnector:
       """Factory function called by vLLM to instantiate connector"""
       return RDMAConnector(vllm_config, role, kv_cache_config)
+
+
+def register_plugin() -> None:
+    """
+    Register RDMAConnector with vLLM's KV-transfer connector registry.
+
+    This function is called by vLLM at start-up through the
+    ``vllm.general_plugins`` entry-point defined in setup.py.  After
+    registration the connector can be referenced by its short name
+    ``"RDMAConnector"`` inside ``--kv-transfer-config``.
+
+    If the registry API is unavailable (older vLLM builds), the function
+    exits silently; the connector can still be loaded via its full import
+    path ``"rdma_connector.RDMAConnector"``.
+    """
+    try:
+        from vllm.distributed.kv_transfer.kv_connector.factory import (
+            KVConnectorFactory,
+        )
+        KVConnectorFactory.register_connector("RDMAConnector", "rdma_connector", "RDMAConnector")
+    except (ImportError, AttributeError) as exc:
+        # Older vLLM builds may not expose KVConnectorFactory or register_connector.
+        # The connector can still be loaded via its full import path
+        # "rdma_connector.RDMAConnector" in --kv-transfer-config.
+        logger.debug("vLLM KVConnectorFactory not available; skipping named registration: %s", exc)

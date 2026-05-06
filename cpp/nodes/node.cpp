@@ -224,8 +224,9 @@ void Node::shutdown()
 
 bool Node::start_vllm_server()
 {
-    // Determine the KV connector role (prefill sends, decode receives)
-    std::string kv_role = (config_.role == "prefill") ? "send" : "recv";
+    // Determine the KV connector role using vLLM's expected values
+    // vLLM uses "kv_producer" (prefill/send) and "kv_consumer" (decode/recv)
+    std::string kv_role = (config_.role == "prefill") ? "kv_producer" : "kv_consumer";
 
     std::string cmd;
 
@@ -233,19 +234,31 @@ bool Node::start_vllm_server()
     std::string venv_path = std::string(getenv("HOME")) + "/rdma-kv-cache/venv";
     std::string activate_and_run = "source " + venv_path + "/bin/activate && ";
 
+    // Build the --kv-transfer-config JSON value.
+    // The string is embedded in a single-quoted shell argument so inner double
+    // quotes do not need any shell escaping.
+    auto make_kv_transfer_cfg = [](const std::string &connector,
+                                   const std::string &role) -> std::string {
+        return "{\"kv_connector\":\"" + connector + "\",\"kv_role\":\"" + role + "\"}";
+    };
+
     if (config_.use_gpu)
     {
-        // GPUDirect RDMA path: use our custom RDMAConnector
+        // GPUDirect RDMA path: use our custom RDMAConnector.
+        // Referencing the full "module.ClassName" path avoids relying on the
+        // vllm.general_plugins entry-point being loaded before the first use.
+        std::string kv_transfer_cfg =
+            make_kv_transfer_cfg("rdma_connector.RDMAConnector", kv_role);
+
         cmd = activate_and_run + "python -m vllm.entrypoints.openai.api_server "
               "--model '" + config_.model_name + "' "
               "--port " + std::to_string(config_.vllm_port) + " "
-              "--kv-connector rdma_connector "
-              "--kv-role " + kv_role;
+              "--kv-transfer-config '" + kv_transfer_cfg + "'";
     }
     else
     {
-        // CPU / standard RDMA path: use MooncakeConnector
-        // Generate the Mooncake JSON config from node and orchestrator addresses
+        // CPU / standard RDMA path: use MooncakeConnector.
+        // Generate the Mooncake JSON config from node and orchestrator addresses.
         std::string mooncake_cfg_path = "/tmp/mooncake-" + config_.role + "-" +
                                         std::to_string(config_.client_socket_port) + ".json";
 
@@ -283,12 +296,13 @@ bool Node::start_vllm_server()
             }
         }
 
+        std::string kv_transfer_cfg = make_kv_transfer_cfg("MooncakeConnector", kv_role);
+
         cmd = activate_and_run + "MOONCAKE_CONFIG_PATH=" + mooncake_cfg_path + " "
               "python -m vllm.entrypoints.openai.api_server "
               "--model '" + config_.model_name + "' "
               "--port " + std::to_string(config_.vllm_port) + " "
-              "--kv-connector MooncakeConnector "
-              "--kv-role " + kv_role + " "
+              "--kv-transfer-config '" + kv_transfer_cfg + "' "
               "--device cpu";
     }
 
