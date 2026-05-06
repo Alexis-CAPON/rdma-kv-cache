@@ -237,9 +237,15 @@ bool Node::start_vllm_server()
     // Build the --kv-transfer-config JSON value.
     // The string is embedded in a single-quoted shell argument so inner double
     // quotes do not need any shell escaping.
+    // Optional module_path sets kv_connector_module_path for custom connectors.
     auto make_kv_transfer_cfg = [](const std::string &connector,
-                                   const std::string &role) -> std::string {
-        return "{\"kv_connector\":\"" + connector + "\",\"kv_role\":\"" + role + "\"}";
+                                   const std::string &role,
+                                   const std::string &module_path = "") -> std::string {
+        std::string json = "{\"kv_connector\":\"" + connector + "\",\"kv_role\":\"" + role + "\"";
+        if (!module_path.empty())
+            json += ",\"kv_connector_module_path\":\"" + module_path + "\"";
+        json += "}";
+        return json;
     };
 
     if (config_.use_gpu)
@@ -249,9 +255,7 @@ bool Node::start_vllm_server()
         // PYTHONPATH makes both rdma_connector.py and the C++ bindings importable.
         std::string project_root = std::string(getenv("HOME")) + "/rdma-kv-cache";
         std::string kv_transfer_cfg =
-            "{\"kv_connector\":\"RDMAConnector\","
-            "\"kv_role\":\"" + kv_role + "\","
-            "\"kv_connector_module_path\":\"rdma_connector\"}";
+            make_kv_transfer_cfg("RDMAConnector", kv_role, "rdma_connector");
 
         cmd = activate_and_run +
               "PYTHONPATH=" + project_root + "/python:" +
